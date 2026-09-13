@@ -1,0 +1,9 @@
+.env
+data/
+*.sqlite
+*.sqlite-*
+screenshots/
+exports/
+runtime-memory/
+node_modules/
+dist/

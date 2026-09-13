@@ -1,0 +1,5 @@
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import Database from "better-sqlite3";
+export async function backup(databasePath:string,dataDir:string){if(!existsSync(databasePath))throw Error("Database does not exist");const dir=join(dataDir,"backups",new Date().toISOString().replace(/[:.]/g,"-"));mkdirSync(dir,{recursive:true});const target=join(dir,basename(databasePath));const db=new Database(databasePath,{readonly:true});try{if(db.pragma("integrity_check",{simple:true})!=="ok")throw Error("SQLite integrity check failed");await db.backup(target)}finally{db.close()}const sha=await new Promise<string>((ok,bad)=>{const h=createHash("sha256");createReadStream(target).on("data",x=>h.update(x)).on("end",()=>ok(h.digest("hex"))).on("error",bad)});writeFileSync(join(dir,"manifest.json"),JSON.stringify({database:basename(target),sha256:sha,profilesIncluded:false,secretsIncluded:false},null,2));return{dir,target,sha}}
