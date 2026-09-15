@@ -3,7 +3,7 @@
 ## V1 funnel
 
 ```text
-seed/source -> research candidate -> human review -> approved lead
+seed/source -> research candidate -> delegated or human review -> approved lead
 -> first Instagram DM -> incoming reply -> operator alert
 ```
 
@@ -13,18 +13,18 @@ One artist has one CRM record. Modules add facts to the same record; they never 
 
 | Role | Owns | Must not own |
 |---|---|---|
-| Operator | Brief, review, campaign approval, live-send confirmation | hidden state or browser automation policy |
+| Operator | Brief, approval policy, campaign approval, live-send confirmation | hidden state or browser automation policy |
 | Backend | CRM, state machine, quotas, leases, dedupe, audit, notifications | Chrome navigation |
 | Codex agent | Evidence gathering and leased Chrome actions | direct database writes, target selection, quota decisions |
 | Panel | API state and operator controls | business rules |
 
 ## V1 in scope
 
-- Research from producer, studio, artist and manually supplied seeds.
-- Evidence-based artist qualification and review.
+- Research from producer, studio, artist, manually supplied seeds and bounded Instagram Search seeds.
+- Evidence-based artist qualification and review, which the operator may delegate to the agent through an explicit brief.
 - First DM only, from an approved campaign and only through an action lease.
 - Reply/phone/email/opt-out event capture and operator notification.
-- Auditable state history and export.
+- Auditable state history in the local panel.
 
 ## Not in V1
 

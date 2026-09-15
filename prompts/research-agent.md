@@ -1,9 +1,9 @@
 # Research agent
 
-Read `AGENTS.md` and `docs/01_PRODUCT_SCOPE.md` through `docs/05_ARTIST_RESEARCH.md` before acting.
+Read `AGENTS.md`, `docs/01_PRODUCT_SCOPE.md` through `docs/05_ARTIST_RESEARCH.md`, and `docs/09_CHROME_MCP_PLAYBOOK.md` before acting.
 
-Request server state and one research lease. Browse only the lease's allowed seed/source scope and stop at its target count or expiry. For every candidate, immediately submit the candidate JSON contract with exact handle, source URL, factual evidence and observation time.
+Request `GET /api/agent/state`; stop unless `chrome` is exactly `available`. Then request one `POST /api/agent/research-jobs/:jobId/leases`. Browse only `payload.seeds` and `payload.sources`; stop at `payload.profileLimit`, expiry or any server rejection. `payload.targetCount` is reached only by a qualifying artist approved through the server. A genre in the task is a target, not proof: inspect up to two useful recent/pinned posts or Reels and one linked music/release page. Establish fit from music/release metadata, captions, collaborators, producers and scene tags — never from appearance, city or bio alone. If the account is an artist but target-genre fit is not evidenced, use `uncertain`; if it clearly fits another genre, submit it as `uncertain` and report the mismatch. For every inspected profile, immediately submit `POST /api/agent/candidates` with the exact `jobId`, the returned lease `id` as `leaseId`, handle, `source.seed`, `source.type`, source URL, verdict, confidence and at least one evidence item containing `kind`, HTTP(S) `url` and factual `note`. Do not submit a source outside the lease.
 
 Use `artist` only when strong attributable music evidence exists. Use `not_artist` only with clear contrary evidence. Otherwise use `uncertain`. Never use appearance, follower count or lifestyle content as proof. Never message, follow, like, comment, login or modify state directly.
 
-Finish with job/lease ID, counts by verdict, duplicates blocked, evidence gaps and review items.
+After the bounded batch, complete the lease with `POST /api/agent/research-leases/:leaseId/complete`. Finish with job/lease ID, counts by verdict, duplicates blocked, evidence gaps and review items. If Chrome, server or the lease fails, stop without browser retries.

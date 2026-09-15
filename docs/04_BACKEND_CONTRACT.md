@@ -12,33 +12,63 @@ The backend validates every transition. The panel and agent are API clients; nei
 {
   "mode": "dry_run|live_enabled|blocked",
   "chrome": "required|available|unavailable",
-  "quota": {"firstDmRemaining": 35, "windowEndsAt": "ISO-8601"},
+  "stopReason": "heartbeat_stale|login_required|restricted|unavailable|null",
+  "rulesVersion": "2026-09-14",
+  "quota": {"firstDmRemaining": 35, "windowEndsAt": "ISO-8601 or null"},
   "activeLease": null,
-  "rulesVersion": "v1",
-  "stopReason": null
+  "activeCampaignId": "uuid or null"
 }
 ```
 
-### `POST /api/agent/research-leases`
+### Agent outcome rules (enforced)
 
-Input identifies a validated research job. Output contains one bounded seed/source slice, allowed source types, target count and expiry.
+- Outcome values are whitelisted: `previewed|sent|not_sent|login_required|restricted|target_unavailable|uncertain|failed`.
+- `sent` is accepted only when the lease payload has `dryRun=false` and the observed handle matches the lease target exactly. In dry-run the server rejects it with `Sending is disabled in dry-run`.
+- Outcomes are accepted for both `active` and `expired` outreach leases, so a slow operator no longer loses the fact. Non-sent outcomes with a mismatched observed handle are recorded as `handle_mismatch` audit instead of being rejected.
+- Outreach leases validate the requested account: it must exist, be enabled, and have a fresh (under 90s) `available` heartbeat.
+
+### `POST /api/agent/research-jobs/:jobId/leases`
+
+Input identifies a validated research job. Output contains one bounded batch in `payload`: `seeds`, `sources`, optional genres/locations, `targetCount`, `foundAtGrant` and `profileLimit`. `targetCount` counts only qualifying artist leads approved by the server under this job; `profileLimit` is a server-enforced maximum of inspected profiles recorded with the lease. A candidate is accepted only while its `source.seed` and `source.type` match this payload and neither cap is reached.
+
+```json
+{"id":"research-lease-uuid","expiresAt":"ISO-8601","dryRun":true,"payload":{"seeds":["producer"],"sources":["follower"],"targetCount":20,"foundAtGrant":0,"profileLimit":60}}
+```
 
 ### `POST /api/agent/candidates`
 
 ```json
 {
+  "jobId": "uuid",
   "leaseId": "uuid",
   "handle": "artist_handle",
-  "source": {"seedHandle": "producer", "type": "follower", "url": "https://..."},
-  "artistVerdict": "artist|uncertain|not_artist",
+  "source": {"seed": "producer", "type": "follower", "url": "https://..."},
+  "verdict": "artist|uncertain|not_artist",
   "confidence": 0,
   "evidence": [{"kind": "music_link", "url": "https://...", "note": "public release linked in bio"}],
-  "observed": {"genre": null, "location": null, "followers": null, "lastActivityAt": null},
-  "observedAt": "ISO-8601"
+  "genre": null,
+  "location": null,
+  "followers": null
 }
 ```
 
-Server normalizes handle, deduplicates globally, blocks disallowed status transitions and records an audit event.
+`jobId` and an active matching research `leaseId` are required. Use the returned research lease `id` as that `leaseId`. Every source/evidence field is required and non-empty; URLs must be HTTP(S); `followers` is a non-negative integer when supplied. The server normalizes handle, deduplicates globally, blocks candidates outside the leased scope and records an audit event. A duplicate retains its new source/evidence in immutable `duplicate_source` history without creating a second lead.
+
+### `POST /api/agent/research-leads/:id/approve`
+
+For an explicitly delegated brief only. Body must contain the active matching research `jobId` and `leaseId`. The backend accepts autonomous approval solely from `review` to `ready` when verdict is `artist`, confidence is at least 80 and followers are at least 100. It records `agent_auto_approve` against that job; this is what advances the job target. The agent must additionally enforce the client brief, including US fit and music-evidence criteria.
+
+### `POST /api/agent/research-leads/:id/reject`
+
+For a clear `not_artist` only. Moves `review` to `rejected`, records `agent_auto_reject` and preserves the handle/source/evidence for global dedupe. An actual artist that simply misses the current brief must stay in review rather than be globally rejected.
+
+### `POST /api/runtime/daily-limit`
+
+```json
+{"limit": 12}
+```
+
+Changes the persisted first-DM limit for this local system. Accepted range is 1–35. The agent may call it only after the client explicitly asks to change the current 35-per-rolling-24-hours cap.
 
 ### `POST /api/agent/outreach-leases`
 
@@ -46,8 +76,7 @@ Server selects one approved, non-duplicate, non-opted-out lead and renders the c
 
 ```json
 {
-  "leaseId": "uuid",
-  "action": "preview_dm|send_first_dm",
+  "id": "uuid",
   "expiresAt": "ISO-8601",
   "dryRun": true,
   "target": {"leadId": "uuid", "handle": "artist_handle", "message": "server-rendered message"},
@@ -55,11 +84,11 @@ Server selects one approved, non-duplicate, non-opted-out lead and renders the c
 }
 ```
 
-### `POST /api/agent/outreach-leases/:leaseId/outcome`
+### `POST /api/agent/outreach-leases/:id/outcome`
 
 Allowed outcomes: `previewed`, `sent`, `not_sent`, `login_required`, `restricted`, `target_unavailable`, `uncertain`, `failed`.
 
-Server accepts one idempotent outcome per lease. Only accepted `sent` changes a lead to `IG_CONTACTED` and decrements quota atomically.
+Accepted `sent` changes a `ready` lead to `IG_CONTACTED`; if a newer inbound state already exists, the backend records the factual send while preserving that newer state. Disabling live mode revokes all still-active live outreach leases before an outcome can be submitted.
 
 ### `POST /api/agent/inbox-events`
 
@@ -67,19 +96,19 @@ Input has account, thread/message identifier, exact handle if known, received ti
 
 ## Panel endpoints
 
-The panel receives server-owned DTOs only: leads/review queue, campaigns, lease/audit history, status/quota and inbox events. It can request review approvals, campaign drafts/approval, runtime gates and task start/stop intent. It cannot calculate eligibility or write arbitrary state.
+The panel receives server-owned DTOs only: leads/review queue (with `contact` and `future`), campaigns, `leases` history (last 50), audit history, status/quota and inbox events. It can request review approvals, `unblock` (unknown to ready), targeted campaign membership (`POST /api/campaigns/:id/leads {leadIds}`), notification retry (`POST /api/notifications/:id/retry`), runtime gates and task start/stop intent. It cannot calculate eligibility or write arbitrary state.
 
 ### `GET /api/panel/snapshot`
 
-One authenticated payload for initial load and refresh. The backend derives every counter and label.
+One local-only payload for initial load and refresh. The backend derives every counter and label.
 
 ```json
 {
-  "system": {"mode": "dry_run", "chrome": "available", "firstDmRemaining": 35},
-  "review": [{"leadId": "uuid", "handle": "artist", "verdict": "uncertain", "evidenceCount": 1, "source": "producer"}],
+  "state": {"mode": "dry_run", "chrome": "available", "quota": {"firstDmRemaining": 35}},
+  "research": {"leads": [{"id": "uuid", "handle": "artist", "verdict": "uncertain"}]},
   "campaigns": [{"id": "uuid", "name": "September", "status": "approved", "stats": {"ready": 12, "contacted": 3}}],
-  "activity": [{"at": "ISO-8601", "kind": "candidate_created", "leadId": "uuid", "detail": "artist verdict"}],
-  "inbox": [{"leadId": "uuid", "handle": "artist", "kind": "new_reply", "receivedAt": "ISO-8601"}]
+  "activity": [{"created": "ISO-8601", "kind": "candidate_created", "lead_id": "uuid", "detail": "artist verdict"}],
+  "inbox": [{"handle": "artist", "kind": "new_reply", "received": "ISO-8601"}]
 }
 ```
 
@@ -87,9 +116,8 @@ The panel refreshes this snapshot after an operator request or accepted agent ou
 
 ## Required backend validation
 
-- authentication and audit actor;
 - lease ownership, expiry and one-outcome idempotency;
 - exact handle match and unique initial contact;
 - campaign approval, `DO_NOT_CONTACT`, account pause and quota;
-- schema validation, evidence URL validation and content size limits;
+- schema validation, research lease scope, evidence URL validation and content size limits;
 - no secrets in responses/logs; screenshot references remain local and access-controlled.

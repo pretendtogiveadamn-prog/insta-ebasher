@@ -13,7 +13,7 @@ Build in this order. Do not start browser work before the server can safely reco
 ## Acceptance checks
 
 - A research candidate appears in the panel only after backend validation.
-- A human approval is required before an outreach lease can target the lead.
+- A client-authorized or delegated-approved lead is required before an outreach lease can target it.
 - The agent cannot obtain a lease after quota, opt-out, duplicate or campaign-state blocks.
 - The panel reflects one accepted outcome and never invents a sent state.
 - Restarting the service preserves CRM/audit but resets live mode safely.

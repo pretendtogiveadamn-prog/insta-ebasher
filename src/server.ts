@@ -1,16 +1,86 @@
 import express from "express";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { Events } from "./events.js";
 import { Store } from "./store.js";
-const c=config(),store=new Store(c.db),events=new Events();let dry=c.dryRun;
-const app=express();app.use(express.json({limit:"2mb"}));app.use(express.static(join(process.cwd(),"public")));const changed=()=>events.emit();const obj=(x:any)=>{if(!x||typeof x!=="object"||Array.isArray(x))throw Error("JSON object is required");return x};
-const notify=async(n:any)=>{if(!n)return;if(!c.telegram.token||!c.telegram.chatId){store.finishNote(n.id,"not_configured","Telegram is not configured");return}try{const r=await fetch(`https://api.telegram.org/bot${c.telegram.token}/sendMessage`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:c.telegram.chatId,text:n.text})});if(!r.ok)throw Error(`Telegram ${r.status}`);store.finishNote(n.id,"sent",null)}catch(e){store.finishNote(n.id,"pending",e instanceof Error?e.message:"Telegram failed")}};
-app.get("/api/health",(_q,r)=>r.json({ok:true,product:"INSTA-EBASHER"}));app.get("/api/panel/snapshot",(_q,r)=>r.json(store.snapshot(c.limit,dry)));app.get("/api/agent/state",(_q,r)=>r.json(store.state(c.limit,dry)));
-app.get("/api/panel/events",(q,r)=>{r.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache",connection:"keep-alive"});r.write("event: ready\ndata: {}\n\n");const off=events.on(()=>r.write("event: state\ndata: {}\n\n"));q.on("close",off)});
-app.post("/api/accounts",(q,r)=>{const a=store.account(obj(q.body).label);changed();r.status(201).json(a)});app.post("/api/agent/heartbeat",(q,r)=>{const b=obj(q.body),a=store.heartbeat(b.accountId,b.chromeState,b.username||null);changed();r.json({account:a,state:store.state(c.limit,dry)})});app.post("/api/accounts/:id/:mode",(q,r)=>{const a=store.accountBy(q.params.id);if(!a)throw Error("Account not found");store.db.prepare("UPDATE accounts SET enabled=? WHERE id=?").run(q.params.mode==="resume"?1:0,a.id);changed();r.json(store.accountBy(a.id))});
-app.post("/api/research/jobs",(q,r)=>{const x=store.job(obj(q.body));changed();r.status(201).json(x)});app.get("/api/research/jobs",(_q,r)=>r.json(store.jobs()));app.post("/api/research/jobs/:id/stop",(q,r)=>{store.db.prepare("UPDATE jobs SET status='stopped' WHERE id=?").run(q.params.id);changed();r.json(store.jobBy(q.params.id))});app.post("/api/agent/research-jobs/:id/leases",(q,r)=>{const j=store.jobBy(q.params.id);if(!j||j.status!=="running")throw Error("Research job is not running");const x=store.lease("research",null,null,j.id,{...j.brief,targetCount:Math.min(20,j.target-j.found)});changed();r.status(201).json(x)});app.post("/api/agent/research-leases/:id/complete",(q,r)=>{store.leaseBy(q.params.id,"research");store.done(q.params.id);changed();r.json({ok:true})});
-app.post("/api/agent/candidates",(q,r)=>{const x=store.lead(obj(q.body));changed();r.status(x.duplicate?200:201).json(x)});app.post("/api/agent/research-candidates",(q,r)=>{const x=store.lead(obj(q.body));changed();r.status(x.duplicate?200:201).json(x)});app.get("/api/research/leads",(q,r)=>r.json(store.leads(q.query.state as string|undefined)));app.post("/api/research/leads/:id/:decision",(q,r)=>{const d=q.params.decision;if(d==="approve")r.json(store.setLead(q.params.id,"ready","approved"));else if(d==="reject")r.json(store.setLead(q.params.id,"rejected","rejected"));else if(d==="dnc")r.json(store.setLead(q.params.id,"dnc","operator_dnc"));else throw Error("Invalid decision");changed()});
-app.get("/api/templates",(_q,r)=>r.json(store.templates()));app.post("/api/templates",(q,r)=>{const x=store.template(obj(q.body));changed();r.status(201).json(x)});app.post("/api/templates/:id/approve",(q,r)=>{const x=store.approveTemplate(q.params.id);changed();r.json(x)});app.get("/api/campaigns",(_q,r)=>r.json(store.campaigns()));app.post("/api/campaigns",(q,r)=>{const x=store.campaign(obj(q.body));changed();r.status(201).json(x)});app.post("/api/campaigns/:id/add-approved-leads",(q,r)=>{const added=store.addReady(q.params.id);changed();r.json({added})});app.post("/api/campaigns/:id/:state",(q,r)=>{const state=q.params.state;if(!["approve","start","stop"].includes(state))throw Error("Invalid campaign action");const x=store.campaignState(q.params.id,state==="approve"?"approved":state==="start"?"running":"stopped");changed();r.json(x)});app.post("/api/runtime/enable-real-sending",(q,r)=>{if(obj(q.body).confirmation!=="SEND_REAL_MESSAGES")throw Error("Invalid confirmation");if(c.dryRun)throw Error("DRY_RUN=true at startup");dry=false;changed();r.json(store.state(c.limit,dry))});app.post("/api/runtime/disable-real-sending",(_q,r)=>{dry=true;changed();r.json(store.state(c.limit,dry))});
-app.post("/api/agent/outreach-leases",(q,r)=>{const x=store.outreach(obj(q.body).accountId,c.limit,dry);changed();r.status(201).json(x)});app.post("/api/agent/outreach-leases/:id/outcome",(q,r)=>{const x=store.outcome(q.params.id,obj(q.body));changed();r.json(x)});app.post("/api/agent/inbox-leases",(q,r)=>{const x=store.inboxLease(obj(q.body).accountId);changed();r.status(201).json(x)});app.post("/api/agent/inbox-events",async(q,r)=>{const x=store.inboxEvent(obj(q.body),c.country);await notify(x.notification);changed();r.status(x.duplicate?200:201).json(x)});app.post("/api/agent/inbox-leases/:id/complete",(q,r)=>{store.leaseBy(q.params.id,"inbox");store.done(q.params.id);changed();r.json({ok:true})});
-app.use((e:any,_q:any,r:any,_n:any)=>r.status(/not found/i.test(e.message)?404:400).json({error:e.message||"Unknown error"}));const server=app.listen(c.port,c.host,()=>console.log(`INSTA-EBASHER on ${c.host}:${c.port}`));process.on("SIGINT",()=>server.close(()=>{store.close();process.exit(0)}));
+
+const c = config();
+const store = new Store(c.db);
+const events = new Events();
+let dry = c.dryRun;
+let limit = store.dailyLimit(c.limit);
+const app = express();
+app.use(express.json({ limit: "2mb" }));
+app.use(express.static(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "public")));
+const changed = () => events.emit();
+const obj = (value: any) => { if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("JSON object is required"); return value; };
+
+async function notify(notification: any) {
+  if (!notification) return;
+  if (!c.telegram.token || !c.telegram.chatId) { store.finishNote(notification.id, "not_configured", "Telegram is not configured"); return; }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${c.telegram.token}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal, body: JSON.stringify({ chat_id: c.telegram.chatId, text: notification.text }) });
+    if (!response.ok) throw Error(`Telegram ${response.status}`);
+    store.finishNote(notification.id, "sent", null);
+  } catch (error) { store.finishNote(notification.id, "pending", error instanceof Error ? error.message : "Telegram failed"); }
+  finally { clearTimeout(timer); }
+}
+
+app.get("/api/health", (_q, res) => res.json({ ok: true, product: "INSTA-EBASHER" }));
+app.get("/api/panel/snapshot", (_q, res) => res.json(store.snapshot(limit, dry)));
+app.get("/api/agent/state", (_q, res) => res.json(store.state(limit, dry)));
+app.get("/api/panel/events", (request, response) => {
+  response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  response.write("event: ready\ndata: {}\n\n");
+  const off = events.on(() => response.write("event: state\ndata: {}\n\n"));
+  request.on("close", off);
+});
+
+app.post("/api/accounts", (req, res) => { const account = store.account(obj(req.body).label); store.audit(null, "account", `created:${account.label}`); changed(); res.status(201).json(account); });
+app.post("/api/agent/heartbeat", (req, res) => { const body = obj(req.body); const account = store.heartbeat(body.accountId, body.chromeState, body.username ?? null); changed(); res.json({ account, state: store.state(limit, dry) }); });
+app.post("/api/accounts/:id/:mode", (req, res) => {
+  if (!(["pause", "resume"] as string[]).includes(req.params.mode)) throw Error("Invalid account action");
+  const account = store.accountBy(req.params.id); if (!account) throw Error("Account not found");
+  store.db.prepare("UPDATE accounts SET enabled=? WHERE id=?").run(req.params.mode === "resume" ? 1 : 0, account.id);
+  store.audit(null, "account", `${req.params.mode}:${account.id}`); changed(); res.json(store.accountBy(account.id));
+});
+
+app.post("/api/research/jobs", (req, res) => { const job = store.job(obj(req.body)); changed(); res.status(201).json(job); });
+app.get("/api/research/jobs", (_q, res) => res.json(store.jobs()));
+app.post("/api/research/jobs/:id/stop", (req, res) => { if (!store.jobBy(req.params.id)) throw Error("Research job not found"); store.db.prepare("UPDATE jobs SET status='stopped' WHERE id=?").run(req.params.id); store.audit(null, "research_job", `stopped:${req.params.id}`); changed(); res.json(store.jobBy(req.params.id)); });
+app.post("/api/agent/research-jobs/:id/leases", (req, res) => { const job = store.jobBy(req.params.id); if (!job || job.status !== "running") throw Error("Research job is not running"); const targetCount = Math.min(20, job.target - job.found); const lease = store.lease("research", null, null, job.id, { ...job.brief, targetCount, foundAtGrant: job.found, profileLimit: Math.min(60, Math.max(10, targetCount * 4)) }); changed(); res.status(201).json(lease); });
+app.post("/api/agent/research-leases/:id/complete", (req, res) => { store.leaseBy(req.params.id, "research"); store.done(req.params.id); changed(); res.json({ ok: true }); });
+const candidate = (req: any, res: any) => { const body = obj(req.body); if (typeof body.jobId !== "string" || typeof body.leaseId !== "string") throw Error("jobId and leaseId are required"); const lease = store.leaseBy(body.leaseId, "research"); if (lease.job_id !== body.jobId) throw Error("Research lease does not match jobId"); const job = store.jobBy(body.jobId); if (!job || job.status !== "running") throw Error("Research job is not running"); const scope = JSON.parse(lease.payload); if (!scope.seeds?.includes(body.source?.seed) || !scope.sources?.includes(body.source?.type)) throw Error("Candidate is outside the research lease scope"); if (store.researchInspections(lease.id) >= Number(scope.profileLimit)) throw Error("Research profile limit reached"); if (job.found >= job.target || job.found - Number(scope.foundAtGrant ?? 0) >= Number(scope.targetCount)) throw Error("Research lease target reached"); const result = store.lead(body); store.audit(result.lead.id, "research_inspected", `lease:${lease.id}`); changed(); res.status(result.duplicate ? 200 : 201).json(result); };
+app.post("/api/agent/candidates", candidate); app.post("/api/agent/research-candidates", candidate);
+app.get("/api/research/leads", (req, res) => res.json(store.leads(req.query.state as string | undefined)));
+app.post("/api/research/leads/:id/:decision", (req, res) => { const d = req.params.decision; const state = d === "approve" || d === "unblock" ? "ready" : d === "reject" ? "rejected" : d === "dnc" ? "dnc" : null; if (!state) throw Error("Invalid decision"); const lead = store.setLead(req.params.id, state as any, `operator_${d}`); changed(); res.json(lead); });
+app.post("/api/agent/research-leads/:id/approve", (req, res) => { const body = obj(req.body); if (typeof body.jobId !== "string" || typeof body.leaseId !== "string") throw Error("jobId and leaseId are required"); const lease = store.leaseBy(body.leaseId, "research"); if (lease.job_id !== body.jobId) throw Error("Research lease does not match jobId"); const job = store.jobBy(body.jobId); if (!job || job.status !== "running") throw Error("Research job is not running"); const approved = store.autoApprove(req.params.id, job.id); const current = store.jobBy(job.id); if (current && current.found >= current.target) { store.db.prepare("UPDATE jobs SET status='completed' WHERE id=?").run(current.id); store.audit(null, "research_job", `completed:${current.id}`); } changed(); res.json(approved); });
+app.post("/api/agent/research-leads/:id/reject", (req, res) => { const rejected = store.autoReject(req.params.id); changed(); res.json(rejected); });
+
+app.get("/api/templates", (_q, res) => res.json(store.templates()));
+app.post("/api/templates", (req, res) => { const template = store.template(obj(req.body)); store.audit(null, "template", "created"); changed(); res.status(201).json(template); });
+app.post("/api/templates/:id/approve", (req, res) => { const template = store.approveTemplate(req.params.id); changed(); res.json(template); });
+app.get("/api/campaigns", (_q, res) => res.json(store.campaigns()));
+app.post("/api/campaigns", (req, res) => { const campaign = store.campaign(obj(req.body)); changed(); res.status(201).json(campaign); });
+app.post("/api/campaigns/:id/add-approved-leads", (req, res) => { const added = store.addReady(req.params.id); changed(); res.json({ added }); });
+app.post("/api/campaigns/:id/leads", (req, res) => { const added = store.addLeads(req.params.id, obj(req.body).leadIds); changed(); res.json({ added }); });
+app.post("/api/campaigns/:id/:action", (req, res) => { if (!(["approve", "start", "stop"] as string[]).includes(req.params.action)) throw Error("Invalid campaign action"); const campaign = store.campaignState(req.params.id, req.params.action as any); changed(); res.json(campaign); });
+app.post("/api/runtime/enable-real-sending", (req, res) => { if (obj(req.body).confirmation !== "SEND_REAL_MESSAGES") throw Error("Invalid confirmation"); dry = false; store.audit(null, "runtime", "real_sending_enabled"); changed(); res.json(store.state(limit, dry)); });
+app.post("/api/runtime/disable-real-sending", (_req, res) => { dry = true; const revoked = store.revokeLiveOutreachLeases(); store.audit(null, "runtime", `real_sending_disabled;revoked=${revoked}`); changed(); res.json({ ...store.state(limit, dry), revoked }); });
+app.post("/api/runtime/daily-limit", (req, res) => { limit = store.setDailyLimit(obj(req.body).limit); changed(); res.json(store.state(limit, dry)); });
+
+app.post("/api/agent/outreach-leases", (req, res) => { const lease = store.outreach(obj(req.body).accountId, limit, dry); changed(); res.status(201).json(lease); });
+app.post("/api/agent/outreach-leases/:id/outcome", (req, res) => { const lead = store.outcome(req.params.id, obj(req.body)); changed(); res.json(lead); });
+app.post("/api/agent/inbox-leases", (req, res) => { const lease = store.inboxLease(obj(req.body).accountId); changed(); res.status(201).json(lease); });
+app.post("/api/agent/inbox-events", async (req, res) => { const result = store.inboxEvent(obj(req.body), c.country); await notify(result.notification); changed(); res.status(result.duplicate ? 200 : 201).json(result); });
+app.post("/api/agent/inbox-leases/:id/complete", (req, res) => { store.leaseBy(req.params.id, "inbox"); store.done(req.params.id); changed(); res.json({ ok: true }); });
+app.post("/api/notifications/:id/retry", async (req, res) => { const notification = store.noteById(req.params.id); if (!notification) throw Error("Notification not found"); await notify(notification); changed(); res.json(store.noteById(req.params.id)); });
+
+app.use((error: any, _req: any, res: any, _next: any) => { const message=error instanceof Error?error.message:"Request failed"; const internal=/sqlite|sql(?:ite)?|constraint|syntax|stack|better-sqlite/i.test(message); res.status(/not found/i.test(message)?404:internal?500:400).json({ error:internal?"Request could not be completed":message }); });
+const server = app.listen(c.port, c.host, () => console.log(`INSTA-EBASHER on ${c.host}:${c.port}`));
+let shuttingDown = false;
+const shutdown = () => { if (shuttingDown) return; shuttingDown = true; server.close(() => { store.close(); process.exit(0); }); server.closeAllConnections(); setTimeout(() => { store.close(); process.exit(0); }, 3000).unref(); };
+process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
