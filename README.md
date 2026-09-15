@@ -12,7 +12,7 @@ This repository deliberately contains **no** browser launcher, proxy, cookie, pe
 
 ## Start here
 
-If you are the non-technical client, start with [`START_FOR_CLIENT_RU.md`](START_FOR_CLIENT_RU.md). It contains the download/install steps and one copy-paste prompt for Codex.
+For a client handoff, start with [`START_FOR_CLIENT_RU.md`](START_FOR_CLIENT_RU.md). The exact agent onboarding runbook is [`prompts/client-onboarding-agent.md`](prompts/client-onboarding-agent.md).
 
 1. Read `AGENTS.md`.
 2. Read `docs/01_PRODUCT_SCOPE.md` and `docs/03_AGENT_PROTOCOL.md`.
