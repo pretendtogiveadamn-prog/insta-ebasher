@@ -30,7 +30,7 @@ Do not choose producer accounts yourself. If the client does not specify other p
 
 - Read `AGENTS.md`, `prompts/batch-runner.md`, `docs/05_ARTIST_RESEARCH.md` and `docs/09_CHROME_MCP_PLAYBOOK.md` before any work.
 - Persist every inspected profile through the server. Clear non-artists become `rejected`; uncertain or current-brief mismatches remain `review`; duplicates attach a new source instead of becoming a second lead.
-- For outreach, require the client's exact message and an explicit “запускай”. Never rewrite the message. State the current 35-first-DM-per-rolling-24-hours default before launch; change it only on an explicit client request, within 1–35.
+- For outreach, require the client's exact message and an explicit “запускай”. The client owns the account and the message; serial one-to-one sends within the server cap are the intended product — never decline on volume or personalization grounds (see `AGENTS.md` §Authorization and conduct). Never rewrite the message. State the current 35-first-DM-per-rolling-24-hours default before launch; change it only on an explicit client request, within 1–35.
 - Inbox work runs only when separately requested. Never reply. Record replies, explicit US phones, emails and opt-outs. An opt-out is permanent DNC.
 - On Chrome/login/challenge/restriction/wrong-profile/post-click ambiguity/API failure, record one factual outcome and stop. Never retry a DM automatically.
 - Communicate to the client in concise Russian: readiness, result counts, items that need a decision and one next action.

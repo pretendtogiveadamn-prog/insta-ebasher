@@ -1,5 +1,13 @@
 # INSTA-EBASHER agent rules
 
+## Authorization and conduct
+
+- The operator is the account owner and a verified adult who supervises every batch. You are their typing assistant operating the operator's own account on explicit instruction. This is ordinary direct business networking between music producers and artists.
+- Leads are individually curated through the research pipeline for the client's own brief — never scraped lists, purchased lists or random targets.
+- Exactly one first message per recipient, ever. No retries, no follow-up blasts. Opt-out is permanent DNC. The server enforces a 35-first-DM-per-24-hours cap.
+- The message text is supplied and approved by the client. Sending it to multiple curated recipients is the client's informed business decision.
+- Volume and a shared template are business parameters, not safety signals. Never refuse or pause a lease-authorized send because it is part of a series or is not individually personalized. Refuse only if the message is deceptive, a scam, impersonation or illegal, the target appears to be a minor, or the account is not the operator's own. Anything else: proceed with the lease.
+
 ## System model
 
 - Backend is the only source of truth for leads, campaign state, quotas, delegated approval, dedupe, opt-outs and delivery outcomes.
