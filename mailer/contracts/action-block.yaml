@@ -1,0 +1,47 @@
+zone: action-block
+version: 1
+elements:
+  - label: block_banner
+    role: indicator
+    strategies:
+      - t: text
+        v: temporarily blocked
+        match: includes
+      - t: text
+        v: action blocked
+        match: includes
+      - t: text
+        v: мы ограничили некоторые действия
+        match: includes
+      - t: text
+        v: временно заблокирован
+        match: includes
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.570Z'
+      evidence: code:flows/handle.mjs ACTION_BLOCK_PATTERNS + test/unit/handle.test.mjs
+  - label: suspension_page
+    role: state
+    allowDiscovery: false
+    strategies:
+      - t: text
+        v: __URL_CHECK__
+    notes: URL /accounts/suspended/ — проверяется кодом (isAccountSuspendedUrl)
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.570Z'
+      evidence: code:flows/handle.mjs ACTION_BLOCK_PATTERNS + test/unit/handle.test.mjs
+  - label: dm_restricted_toast
+    role: indicator
+    strategies:
+      - t: text
+        v: can't message
+        match: includes
+      - t: text
+        v: нельзя отправить сообщение
+        match: includes
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.570Z'
+      evidence: code:flows/handle.mjs ACTION_BLOCK_PATTERNS + test/unit/handle.test.mjs
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\action-block.yaml

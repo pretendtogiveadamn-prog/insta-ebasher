@@ -1,0 +1,60 @@
+zone: profile
+version: 1
+elements:
+  - label: header_username
+    role: indicator
+    strategies:
+      - t: css
+        v: header h1
+      - t: css
+        v: header h2
+      - t: css
+        v: header a[href^='/']
+    notes: точный @handle из заголовка профиля (word-boundary, flows/handle.mjs)
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.922Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+  - label: bio
+    role: state
+    strategies:
+      - t: css
+        v: section main > div > div:nth-child(3)
+    notes: bio-текст для ресерча (llm/research)
+  - label: followers_count
+    role: state
+    strategies:
+      - t: text
+        v: followers
+        match: includes
+    notes: 'live 2026-09-24: матчится (статы-контейнер)'
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.922Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+  - label: posts_grid
+    role: state
+    strategies:
+      - t: css
+        v: a[href*='/p/']
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.922Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+  - label: profile_message_button
+    role: trigger
+    strategies:
+      - t: text
+        v: Message
+      - t: text
+        v: Сообщения
+      - t: css
+        v: div[role="button"]:has(a[href="/direct/new/"])
+    notes: >-
+      маршрут А (spec 02 S4). На профиле может отсутствовать (deezzo_prod3 live) — фолбэк = маршрут Б (зона direct-new);
+      текст топ-бара "Messages" (мн.ч.) не матчится — ок
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.922Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\profile.yaml

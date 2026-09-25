@@ -1,0 +1,19 @@
+{
+  "name": "insta-ebasher-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/unit/*.test.mjs\"",
+    "dood": "node --env-file-if-exists=state/.env run.mjs dood",
+    "doctor": "node --env-file-if-exists=state/.env run.mjs doctor"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "js-yaml": "^4.1.0",
+    "playwright-core": "1.63.0"
+  }
+}

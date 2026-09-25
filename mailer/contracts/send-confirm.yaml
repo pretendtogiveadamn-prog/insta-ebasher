@@ -1,0 +1,43 @@
+zone: send-confirm
+version: 1
+elements:
+  - label: our_message_bubble
+    role: indicator
+    strategies:
+      - t: text
+        v: __DRAFT_TEXT__
+        match: includes
+    notes: точный substring нашего текста в ленте треда
+    verified:
+      status: verified
+      at: '2026-09-25T10:55:12.502Z'
+      evidence: 'canary dm-b1a6c750-1790333116557 + vision: пузырь в чате levelthreethesis'
+  - label: sent_status_icon
+    role: indicator
+    strategies:
+      - t: css
+        v: svg[aria-label='Sent']
+      - t: css
+        v: svg[aria-label='Delivered']
+      - t: css
+        v: svg[aria-label='Seen']
+      - t: css
+        v: svg[aria-label='Отправлено']
+      - t: css
+        v: svg[aria-label='Доставлено']
+      - t: css
+        v: svg[aria-label='Просмотрено']
+    verified:
+      status: verified
+      at: '2026-09-25T11:07:05.629Z'
+      evidence: >-
+        mini-chat НЕ рендерит Sent-иконку (vision dm-6b516d6b-1790333859427); DOM-confirm идёт по bubble+composer —
+        validate-confirm.mjs live ok
+  - label: network_send_ok
+    role: state
+    allowDiscovery: false
+    strategies:
+      - t: text
+        v: __NETWORK_OK__
+    notes: network-подтверждение (send/{thread|ig_mid} ok:true) — верифицируется в verify.mjs, не DOM
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\send-confirm.yaml

@@ -1,0 +1,40 @@
+zone: thread
+version: 1
+elements:
+  - label: composer
+    role: field
+    strategies:
+      - t: css
+        v: div[role='textbox']
+      - t: css
+        v: div[contenteditable='true']
+      - t: css
+        v: div[role='textbox'][contenteditable='true']
+    notes: НЕ textarea (TRAPS
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.564Z'
+      evidence: audit-deezzo_prod-1790330852899 + vision S5
+  - label: composer_placeholder
+    role: state
+    strategies:
+      - t: text
+        v: Message...
+      - t: text
+        v: Сообщение...
+        allowDiscovery: false
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.565Z'
+      evidence: audit-deezzo_prod-1790330852899 + vision S5
+  - label: thread_url_indicator
+    role: indicator
+    strategies:
+      - t: attr
+        v: a[href*='/direct/']
+    notes: url содержит /direct/ — проверяется кодом dm.mjs, не DOM-стратегией
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.565Z'
+      evidence: audit-deezzo_prod-1790330852899 + vision S5
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\thread.yaml

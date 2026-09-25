@@ -1,0 +1,37 @@
+# Зона minichat — попап чата справа внизу (owner 2026-09-25: ОСНОВНОЕ окно отправки, url не меняется).
+# Live-улика (minichat-deezzo_prod-1790328875932): попап НЕ role=dialog (div-стек);
+# composer = уникальный div[role=textbox]; header = a[href='/{handle}/']; ✕ = svg[aria-label='Close'].
+version: 1
+elements:
+  - label: composer
+    role: field
+    strategies:
+      - t: css
+        v: "div[role='textbox']"
+      - t: css
+        v: "div[contenteditable='true']"
+    notes: уникален на странице профиля (попап); scoped-выбор внутри root — кодом
+
+  - label: header_link
+    role: indicator
+    strategies:
+      - t: attr
+        v: "a[href]"
+    notes: ссылка /{handle}/ в шапке попапа — верификация получателя (verifyThreadRecipient)
+
+  - label: close_button
+    role: trigger
+    strategies:
+      - t: css
+        v: "svg[aria-label='Close']"
+      - t: css
+        v: "svg[aria-label='Закрыть']"
+    notes: ✕ попапа; disambig кодом — box.x > 50% вьюпорта (правая половина), не expand-иконка
+
+  - label: restriction_text
+    role: state
+    allowDiscovery: false
+    strategies:
+      - t: text
+        v: "__CODE_CHECK__"
+    notes: "can\\'t receive / isn\\'t accepting / invite only — код (assertNoRestriction), не DOM-стратегия"

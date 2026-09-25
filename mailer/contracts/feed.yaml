@@ -1,0 +1,16 @@
+# Зона feed — главная лента (spec 08 S3/S15/S16: readiness + cooldown-дом).
+version: 1
+elements:
+  - label: article
+    role: indicator
+    strategies:
+      - t: css
+        v: "main article"
+    notes: "лента прогрузилась: >= 1 article (readiness-предикат, код)"
+
+  - label: home_active
+    role: indicator
+    strategies:
+      - t: css
+        v: "a[href='/']"
+    notes: мы на главной — nav.home активен (доп. сигнал к url)

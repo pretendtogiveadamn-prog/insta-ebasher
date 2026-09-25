@@ -1,0 +1,19 @@
+# Зона search — панель поиска (spec 08 S4-S6: P1-навигация к профилю как человек).
+# TRAPS #5: выбор ряда ТОЛЬКО exact-match (deezzo_prod ≠ deezzo_prod3) — кодом, не позицией.
+version: 1
+elements:
+  - label: search_input
+    role: field
+    strategies:
+      - t: css
+        v: "input[placeholder*='Search']"
+      - t: css
+        v: "input[aria-label*='Search']"
+    notes: input панели поиска; уникален когда панель открыта
+
+  - label: result_row
+    role: trigger
+    strategies:
+      - t: css
+        v: "a[href]"
+    notes: ряд выдачи; выбор = exact href /{handle}/ ИЛИ первая строка текста == handle (код, waitExactResultRow-подобно)

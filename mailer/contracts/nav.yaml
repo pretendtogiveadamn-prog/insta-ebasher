@@ -1,0 +1,26 @@
+# Зона nav — левый сайдбар IG (spec 08: навигация кликами, не goto).
+# Анти-FP: приоритет href над текстом (локализация); Home ≠ логотип (disambig: у Home есть span-потомок).
+version: 1
+elements:
+  - label: home_link
+    role: trigger
+    strategies:
+      - t: css
+        v: "a[href='/']"
+    notes: Home в сайдбаре; на странице может быть и логотип-ссылка на / — выбор по видимости в nav (код, box.x < 120)
+
+  - label: direct_link
+    role: trigger
+    strategies:
+      - t: css
+        v: "a[href*='/direct']"
+    notes: Direct/Messages в сайдбаре
+
+  - label: search_button
+    role: trigger
+    strategies:
+      - t: css
+        v: "svg[aria-label='Search']"
+      - t: css
+        v: "svg[aria-label='Поиск']"
+    notes: Search открывает панель (не ссылка); post-валидация = панель поиска открылась

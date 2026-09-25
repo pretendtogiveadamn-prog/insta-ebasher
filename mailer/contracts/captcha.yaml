@@ -1,0 +1,55 @@
+zone: captcha
+version: 1
+elements:
+  - label: challenge_page
+    role: state
+    allowDiscovery: false
+    strategies:
+      - t: text
+        v: __URL_CHECK__
+    notes: URL /challenges/ — проверяется кодом (isChallengeUrl)
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.573Z'
+      evidence: code:flows/captcha.mjs detectCaptcha + test/unit/captcha.test.mjs
+  - label: photo_grid
+    role: indicator
+    strategies:
+      - t: css
+        v: img[alt*='photo']
+      - t: css
+        v: div[role='dialog'] img[draggable]
+      - t: css
+        v: div[role='dialog'] img
+    notes: photo-select grid в модалке
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.573Z'
+      evidence: code:flows/captcha.mjs detectCaptcha + test/unit/captcha.test.mjs
+  - label: confirm_requests_modal
+    role: indicator
+    strategies:
+      - t: text
+        v: Confirm your requests
+        match: includes
+      - t: text
+        v: Подтвердите запросы
+        match: includes
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.573Z'
+      evidence: code:flows/captcha.mjs detectCaptcha + test/unit/captcha.test.mjs
+  - label: submit_button
+    role: trigger
+    strategies:
+      - t: text
+        v: Submit
+      - t: text
+        v: Confirm
+      - t: text
+        v: Далее
+    verified:
+      status: verified
+      at: '2026-09-25T10:37:52.573Z'
+      evidence: code:flows/captcha.mjs detectCaptcha + test/unit/captcha.test.mjs
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\captcha.yaml

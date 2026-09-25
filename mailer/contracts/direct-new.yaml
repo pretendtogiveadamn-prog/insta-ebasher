@@ -1,0 +1,22 @@
+zone: direct-new
+version: 1
+elements:
+  - label: search_input
+    role: field
+    strategies:
+      - t: css
+        v: input[name='searchInput']
+      - t: css
+        v: input[placeholder*='Search']
+    notes: поле поиска получателя в /direct/new/
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.927Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+  - label: result_row
+    role: trigger
+    strategies:
+      - t: css
+        v: div[role='button']
+    notes: ряд выдачи; выбор = точное совпадение первой строки текста с хэндлом (word-boundary, код)
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\direct-new.yaml

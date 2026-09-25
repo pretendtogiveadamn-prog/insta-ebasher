@@ -1,0 +1,18 @@
+zone: login
+version: 1
+elements:
+  - label: nav_own_profile_link
+    role: indicator
+    strategies:
+      - t: css
+        v: a[href='/direct/inbox/']
+      - t: css
+        v: svg[aria-label='Home']
+      - t: css
+        v: img[alt*='profile picture']
+    notes: точный @username проверяется кодом (img[alt*="<username>'s profile picture"])
+    verified:
+      status: verified
+      at: '2026-09-25T10:35:22.925Z'
+      evidence: audit audit-deezzo_prod-1790332461566
+file: C:\Users\MateBook\insta-ebasher-v2\contracts\login.yaml
