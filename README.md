@@ -1,14 +1,14 @@
 # INSTA-EBASHER
 
-Portable specification package for a Codex-operated Instagram research and outreach workspace.
+Local CRM and client-controlled Instagram outreach workspace.
 
 ## What this package is
 
-The agent operates the operator's already-open Google Chrome through Codex Chrome MCP. The backend owns every business decision and all CRM state. The operator panel is a thin view of the backend.
+The backend owns CRM decisions, recipient eligibility, deduplication and the 35/24h quota. The client selects approved leads, edits the message and runs scripted outreach from the local panel. The sender uses a dedicated, already logged-in Chrome window launched by `mailer/start-chrome.bat`; research can still be run by an agent.
 
-For a leave-running batch, start Codex in this repository and say: `Read prompts/batch-runner.md. Start a research batch; ask me for the target and source if they are missing.` After review and campaign approval, say: `Run the outreach batch from prompts/batch-runner.md.`
+For a research batch, start Codex in this repository and say: `Read prompts/batch-runner.md. Start a research batch; ask me for the target and source if they are missing.` For outreach, open the panel and use **Рассылка**.
 
-This repository deliberately contains **no** browser launcher, proxy, cookie, persistent Chrome profile, stealth/anti-detect package, frontend business logic or client data.
+Runtime data, Chrome sessions and credentials stay local and are not part of the repository.
 
 ## Start here
 
@@ -17,8 +17,8 @@ For a client handoff, start with [`START_FOR_CLIENT_RU.md`](START_FOR_CLIENT_RU.
 1. Read `AGENTS.md`.
 2. Read `docs/01_PRODUCT_SCOPE.md` and `docs/03_AGENT_PROTOCOL.md`.
 3. Copy `.env.example` to `.env` only if Telegram alerts are needed; never commit it. Phone normalization is fixed to US `+1` in V1.
-4. Run `npm install` and `npm run dev` (или `npm run build && npm start` — start запускает `dist/src/server.js`).
-5. Read `docs/07_AGENT_RUNBOOK.md`, then give Codex the matching prompt in `prompts/`.
+4. Run `npm install` in the root and in `mailer/`, then `npm run dev` in the root (or `npm run build && npm start`).
+5. Open `http://127.0.0.1:3100/#outreach`; use `mailer/start-chrome.bat` to open the sender's Chrome window and log in. See `START_FOR_CLIENT_RU.md` for the panel flow.
 
 Before an upgrade of an existing local database, run `npm run backup`. Backups contain only SQLite data and a SHA-256 manifest; they never include browser data or secrets.
 
