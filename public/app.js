@@ -1,21 +1,275 @@
-const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
-let snap=null,filter="";
-async function api(p,o){o=o||{};const r=await fetch("/api"+p,o),d=await r.json();if(!r.ok)throw Error(d.error);return d}
-const post=(p,b)=>api(p,{method:"POST",headers:{"content-type":"application/json"},body:b?JSON.stringify(b):undefined});
-function note(t,bad){$("#notice").textContent=t;$("#notice").style.color=bad?"#ff857a":"#ddff5b"}
-function card(title,body){return "<article class='card'><h3>"+title+"</h3>"+body+"</article>"}
-function ig(h){return "<a href='https://instagram.com/"+esc(h)+"' target='_blank' rel='noopener'>@"+esc(h)+"</a>"}
-function ago(iso){if(!iso)return "—";return Math.max(0,Math.round((Date.now()-Date.parse(iso))/1000))+" с назад"}
-function hhmm(iso){return new Date(iso).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}
-function form(html,submit){const w=document.createElement("div");w.className="card";w.innerHTML=html;w.querySelector("form").onsubmit=async e=>{e.preventDefault();try{await submit(Object.fromEntries(new FormData(e.target)));note("Сохранено");refresh()}catch(x){note(x.message,true)}};return w}
-function campaignActions(c){let h="";const b=function(a,l){return "<button data-c='"+c.id+"' data-a='"+a+"'>"+l+"</button>"};if(c.status==="draft")h+=b("approve","Одобрить");if(c.status==="approved"||c.status==="stopped")h+=b("start","Старт");if(c.status==="running")h+=b("stop","Стоп");h+=b("add-approved-leads","Добавить одобренных");return "<div class='actions'>"+h+"</div>"}
-function leadControls(x){const b=function(d,l){return "<button data-id='"+x.id+"' data-d='"+d+"'>"+l+"</button>"};if(x.state==="review")return "<div class='actions'>"+b("approve","Одобрить")+b("reject","Отклонить")+b("dnc","DNC")+"</div>";if(x.state==="unknown")return "<div class='actions'>"+b("unblock","Вернуть в проверку")+b("dnc","DNC")+"</div>";if(x.state==="ready"){let opts="";snap.campaigns.forEach(c=>{opts+="<option value='"+c.id+"'>"+esc(c.name)+"</option>"});return "<div class='actions'><select class='camp-"+x.id+"'>"+opts+"</select><button data-add='"+x.id+"'>В кампанию</button>"+b("dnc","DNC")+"</div>"}return ""}
-function leadCard(x){let ev="";(x.evidence||[]).forEach(e=>{ev+="<p>"+esc(e.note||"")+" <a href='"+esc(e.url||"#")+"' target='_blank' rel='noopener'>"+esc((e.url||"").slice(0,40))+"</a></p>"});if(!ev)ev="<p>Нет evidence</p>";let src="";if(x.source)src="<p class='muted'>Источник: "+esc(x.source.seed||"")+"/"+esc(x.source.type||"")+" <a href='"+esc(x.source.url||"#")+"' target='_blank' rel='noopener'>ссылка</a></p>";return card(ig(x.handle),"<span class='muted'>"+esc(x.state)+" · "+esc(x.verdict)+" · "+x.confidence+"%</span>"+src+ev+leadControls(x))}
-function renderLeads(){const el=$("#leads");if(!el)return;const all=snap.research.leads.filter(x=>!filter||x.handle.indexOf(filter)>=0);const shown=all.slice(0,300);el.innerHTML=shown.map(leadCard).join("")+(all.length>shown.length?card("Обрезано","Показано "+shown.length+" из "+all.length+" лидов"):"");el.querySelectorAll("button[data-id]").forEach(b=>{b.onclick=function(){post("/research/leads/"+b.dataset.id+"/"+b.dataset.d).then(refresh).catch(e=>note(e.message,true))}});el.querySelectorAll("button[data-add]").forEach(b=>{b.onclick=function(){const sel=document.querySelector(".camp-"+b.dataset.add);if(!sel||!sel.value){note("Сначала создайте кампанию",true);return}post("/campaigns/"+sel.value+"/leads",{leadIds:[b.dataset.add]}).then(refresh).catch(e=>note(e.message,true))}});const lc=$("#leadCount");if(lc)lc.textContent="Лидов: "+all.length}
-function renderHome(){const s=snap.state;const accEn=snap.accounts.find(a=>a.enabled);const camp=snap.campaigns.find(c=>c.id===s.activeCampaignId);const chrome=s.chrome==="available"?"доступен · heartbeat "+ago(accEn?accEn.heartbeat:null):"Нужно подключить Chrome MCP";const quota=s.quota.firstDmRemaining+" первых DM осталось"+(s.quota.windowEndsAt?", окно до "+hhmm(s.quota.windowEndsAt):"");let runtime;if(s.mode==="dry_run")runtime=card("Режим проверки","<form id='enableForm'><input name='confirmation' placeholder='Введите SEND_REAL_MESSAGES' required><button>Включить отправку</button></form>");else runtime=card("Режим отправки","<button id='disableBtn'>Выключить отправку</button>");$("#home").innerHTML="<div class='grid'>"+card("Chrome MCP",chrome)+card("Лимит",quota)+card("Активная кампания",camp?esc(camp.name):"Нет")+card("Уведомления",String(snap.notifications.filter(n=>n.status!=="sent").length))+"</div><div id='runtime'></div><div id='accounts'></div>";$("#runtime").innerHTML=runtime;const ef=$("#enableForm");if(ef)ef.onsubmit=async e=>{e.preventDefault();try{await post("/runtime/enable-real-sending",Object.fromEntries(new FormData(e.target)));note("Отправка включена");refresh()}catch(x){note(x.message,true)}};const db=$("#disableBtn");if(db)db.onclick=function(){post("/runtime/disable-real-sending").then(refresh).catch(e=>note(e.message,true))};const acc=$("#accounts");acc.append(form("<h3>Instagram-аккаунт</h3><form><input name='label' placeholder='Название аккаунта' required><button>Добавить</button></form>",x=>post("/accounts",x)));snap.accounts.forEach(a=>{const d=document.createElement("div");d.innerHTML=card(esc(a.label)+(a.enabled?"":" · выключен"),"<span class='muted'>"+(a.username?"@"+esc(a.username):"Агент ещё не подтвердил сессию")+" · "+esc(a.state)+" · heartbeat "+ago(a.heartbeat)+"</span><div class='actions'><button data-acc='"+a.id+"' data-mode='"+(a.enabled?"pause":"resume")+"'>"+(a.enabled?"Выключить":"Включить")+"</button></div>");acc.append(d)});acc.querySelectorAll("[data-acc]").forEach(b=>{b.onclick=function(){post("/accounts/"+b.dataset.acc+"/"+b.dataset.mode).then(refresh).catch(e=>note(e.message,true))}})}
-function renderResearch(){$("#research").innerHTML="<div class='grid'>"+card("На проверке",String(snap.research.counts.review))+card("Готовы к DM",String(snap.research.counts.ready))+"</div><div id='jobs'></div><div id='searchWrap'></div><div id='leadCount' class='muted'></div><div id='leads'></div>";const jobs=$("#jobs");jobs.append(form("<h3>Новое задание ресёрча</h3><form><input name='name' placeholder='Название'><input name='seeds' placeholder='Seeds через запятую'><input name='sources' placeholder='Источники: follower, tagged'><input name='targetCount' type='number' value='20' min='1'><button>Запустить</button></form>",x=>post("/research/jobs",{name:x.name,seeds:x.seeds.split(",").map(v=>v.trim()).filter(Boolean),sources:x.sources.split(",").map(v=>v.trim()).filter(Boolean),targetCount:Number(x.targetCount)})));snap.research.jobs.forEach(j=>{const d=document.createElement("div");d.innerHTML=card(esc(j.name),"<span class='muted'>"+esc(j.status)+" · "+j.found+"/"+j.target+"</span>");jobs.append(d)});$("#searchWrap").innerHTML="<input id='searchInput' placeholder='Поиск по хэндлу'>";$("#searchInput").oninput=e=>{filter=e.target.value.trim().toLowerCase();renderLeads()};renderLeads()}
-function renderOutreach(){$("#outreach").innerHTML="<div id='templates'></div><div id='campaigns'></div>";const t=$("#templates");t.append(form("<h3>Шаблон сообщения</h3><form><input name='name' placeholder='Название' required><select name='variant'><option>A</option><option>B</option><option>C</option></select><textarea name='body' placeholder='Текст сообщения' required></textarea><button>Создать</button></form>",x=>post("/templates",x)));snap.templates.forEach(x=>{const d=document.createElement("div");const head=x.approved?"Одобрен":"<button data-template='"+x.id+"'>Одобрить</button>";d.innerHTML=card(esc(x.name)+" / "+esc(x.variant),head+"<p>"+esc(x.body)+"</p>");t.append(d)});t.querySelectorAll("[data-template]").forEach(b=>{b.onclick=function(){post("/templates/"+b.dataset.template+"/approve").then(refresh).catch(e=>note(e.message,true))}});const cs=$("#campaigns");let opts="";snap.templates.filter(x=>x.approved).forEach(x=>{opts+="<option value='"+x.id+"'>"+esc(x.name)+" / "+esc(x.variant)+"</option>"});cs.append(form("<h3>Кампания</h3><form><input name='name' placeholder='Название' required><select name='templateId'>"+opts+"</select><button>Создать</button></form>",x=>post("/campaigns",x)));snap.campaigns.forEach(c=>{const d=document.createElement("div");d.innerHTML=card(esc(c.name),"<span class='muted'>"+esc(c.status)+" · готово "+(c.stats.ready||0)+" · отправлено "+(c.stats.contacted||0)+" · ответы "+(c.stats.replied||0)+"</span><p class='muted'>"+esc(c.template.body)+"</p>"+campaignActions(c));cs.append(d)});cs.querySelectorAll("[data-c]").forEach(b=>{b.onclick=function(){post("/campaigns/"+b.dataset.c+"/"+b.dataset.a).then(refresh).catch(e=>note(e.message,true))}})}
-function renderInbox(){let notes=snap.notifications.slice(0,50).map(function(n){let h="<span class='muted'>"+esc(n.status)+(n.error?" · "+esc(n.error):"")+"</span>";if(n.status!=="sent")h+=" <button data-retry='"+n.id+"'>Повторить</button>";return card(esc(n.kind),esc(n.text)+"<br>"+h)}).join("");if(!notes)notes=card("Уведомления","Пока пусто");let inbox=snap.inbox.slice(0,100).map(function(x){let extra="";if(x.phone)extra+="<b>"+esc(x.phone)+"</b> ";if(x.email)extra+="<b>"+esc(x.email)+"</b>";return card(ig(x.handle),"<span class='muted'>"+esc(x.kind)+" · "+new Date(x.received).toLocaleString("ru-RU")+"</span><p>"+esc(x.body)+"</p>"+extra)}).join("");if(!inbox)inbox=card("Входящие","Пока нет новых сообщений.");$("#inbox").innerHTML="<div class='grid'>"+notes+"</div>"+inbox;$("#inbox").querySelectorAll("[data-retry]").forEach(b=>{b.onclick=function(){post("/notifications/"+b.dataset.retry+"/retry").then(refresh).catch(e=>note(e.message,true))}})}
-function render(){if(!snap)return;const s=snap.state;$("#mode").textContent=s.mode==="dry_run"?"ПРОВЕРКА":"ОТПРАВКА ВКЛЮЧЕНА";renderHome();renderResearch();renderOutreach();renderInbox()}
-async function refresh(){try{snap=await api("/panel/snapshot");render()}catch(e){note(e.message,true)}}
-document.querySelectorAll("[data-tab]").forEach(b=>{b.onclick=function(){document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));$("#"+b.dataset.tab).classList.add("active")}});$("#home").classList.add("active");new EventSource("/api/panel/events").addEventListener("state",refresh);setInterval(refresh,15000);refresh();
+import { esc, button, badge, panel, metric, emptyState, field } from "./components.js";
+
+const $=selector=>document.querySelector(selector);
+const state={snapshot:null,mailer:null,tab:(location.hash||"#outreach").slice(1),selectedLeads:new Set(),excludedLeads:new Set(),allReadySelected:false,leadQuery:"",readyPage:null,researchQuery:"",researchPage:null,planName:"",planBody:"",selectedPlanId:null,selectedAccountId:null,planLeads:[],hasPreview:false,max:35,editBody:"",busy:false};
+const titles={home:"ОБЗОР",research:"ЛИДЫ",outreach:"РАССЫЛКА",inbox:"ВХОДЯЩИЕ"};
+let toastTimer;
+
+async function api(path,options={}){
+  const response=await fetch(`/api${path}`,options);
+  const data=await response.json().catch(()=>({error:"Сервер вернул неожиданный ответ"}));
+  if(!response.ok)throw Error(data.error||`Ошибка ${response.status}`);
+  return data;
+}
+const post=(path,body)=>api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
+const patch=(path,body)=>api(path,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+const ig=handle=>`<a href="https://www.instagram.com/${esc(handle)}/" target="_blank" rel="noopener noreferrer">@${esc(handle)}</a>`;
+const dateTime=value=>value?new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+const currentPlan=()=>state.snapshot?.campaigns.find(x=>x.id===state.selectedPlanId)||null;
+const activeRun=()=>["running","stopping"].includes(state.mailer?.run?.state);
+const readyLeads=()=>state.readyPage?.leads||state.snapshot?.research.leads.filter(x=>x.state==="ready")||[];
+let readySearchTimer,readySearchSeq=0;
+let researchSearchTimer,researchSearchSeq=0;
+async function fetchResearchPage(reset=false){
+  const query=state.researchQuery,seq=++researchSearchSeq;
+  const offset=reset?0:(state.researchPage?.leads.length||0);
+  const page=await api(`/operator/leads?state=all&query=${encodeURIComponent(query)}&offset=${offset}&limit=100`);
+  if(seq!==researchSearchSeq||query!==state.researchQuery)return;
+  state.researchPage={leads:reset?page.leads:[...(state.researchPage?.leads||[]),...page.leads],total:page.total,query};
+  const list=$("#research-list");if(list)list.innerHTML=researchRows();
+  const more=$("#research-more");if(more)more.innerHTML=researchMore();
+}
+async function fetchReadyPage(reset=false){
+  const query=state.leadQuery;
+  const seq=++readySearchSeq;
+  const offset=reset?0:(state.readyPage?.leads.length||0);
+  const page=await api(`/operator/leads?state=ready&query=${encodeURIComponent(query)}&offset=${offset}&limit=100`);
+  if(seq!==readySearchSeq||query!==state.leadQuery)return;
+  state.readyPage={leads:reset?page.leads:[...(state.readyPage?.leads||[]),...page.leads],total:page.total,query};
+  const list=$("#lead-choices");if(list)list.innerHTML=leadChoices();
+  const more=$("#lead-more");if(more)more.innerHTML=leadMore();
+}
+const renderMessage=(body,handle)=>String(body||"").replace(/@?{{\s*handle\s*}}/g,`@${handle}`).replace(/{{\s*[^}]+\s*}}/g,"");
+
+function toast(message,error=false){
+  const el=$("#toast");el.textContent=message;el.dataset.tone=error?"error":"success";el.hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{el.hidden=true},5000);
+}
+
+function header(){
+  $("#current-page").textContent=titles[state.tab]||"РАССЫЛКА";
+  const connected=Boolean(state.mailer?.chromeReady);
+  $("#connection").innerHTML=badge(connected?"Chrome готов":"Chrome не открыт",connected?"success":"warning");
+  const live=state.snapshot?.state.mode!=="dry_run";
+  $("#mode").innerHTML=badge(live?"Отправка разрешена":"Режим проверки",live?"success":"neutral");
+  document.querySelectorAll("[data-tab]").forEach(el=>el.setAttribute("aria-current",el.dataset.tab===state.tab?"page":"false"));
+  document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id===state.tab));
+}
+
+function renderHome(){
+  const s=state.snapshot;
+  const recent=s.campaigns.slice(0,4).map(c=>`<div class="table-row"><div><strong>${esc(c.name)}</strong><small>${esc(c.status)} · ${c.stats.ready||0} ожидают · ${c.stats.contacted||0} отправлено</small></div>${button("Открыть",{tone:"text",action:"open-plan",extra:`data-id="${esc(c.id)}"`})}</div>`).join("");
+  $("#home").innerHTML=`<div class="page-intro"><div><p class="ui-eyebrow">Рабочее пространство</p><h1 id="home-title">Всё под контролем.</h1><p>Лиды, отправка и ответы — в одной локальной панели.</p></div>${button("Открыть рассылку",{tone:"primary",action:"go-outreach"})}</div>
+    <div class="metric-strip">${metric("Готовы к отправке",s.research.counts.ready)}${metric("Осталось за 24 часа",s.state.quota.firstDmRemaining)}${metric("Новых ответов",s.inbox.length)}</div>
+    <div class="simple-grid">${panel("Следующее действие",`<p class="ui-help">Выберите одобренных артистов, проверьте текст и запустите пробный прогон в разделе «Рассылка».</p>${button("Настроить рассылку",{tone:"primary",action:"go-outreach"})}`,{eyebrow:"01 / процесс"})}
+    ${panel("Последние кампании",recent||emptyState("Кампаний пока нет","Создайте первую кампанию в разделе «Рассылка»."),{eyebrow:"02 / история"})}</div>`;
+}
+
+function researchRow(lead){
+  const controls=lead.state==="review"?`${button("Одобрить",{tone:"soft",action:"approve-lead",extra:`data-id="${esc(lead.id)}"`})}${button("Отклонить",{tone:"quiet",action:"reject-lead",extra:`data-id="${esc(lead.id)}"`})}`:lead.state==="ready"?button("Не писать",{tone:"danger",action:"dnc-lead",extra:`data-id="${esc(lead.id)}"` }):"";
+  const evidence=(lead.evidence||[]).slice(0,2).map(x=>esc(x.note||"")).filter(Boolean).join(" · ");
+  return `<div class="table-row"><div><strong>${ig(lead.handle)}</strong><small>${esc(lead.state)} · ${esc(lead.verdict)} · ${lead.confidence}%${lead.followers!=null?` · ${lead.followers} подписчиков`:""}</small>${evidence?`<p>${evidence}</p>`:""}</div><div class="table-row__actions">${controls}</div></div>`;
+}
+function researchRows(){return (state.researchPage?.leads||[]).map(researchRow).join("")||emptyState("Ничего не найдено","Измените запрос или дождитесь новых лидов.")}
+function researchMore(){const shown=state.researchPage?.leads.length||0,total=state.researchPage?.total||0;return shown<total?`${button(`Показать ещё · ${total-shown}`,{tone:"quiet",action:"more-research"})}<span class="ui-help">Показано ${shown} из ${total}</span>`:`<span class="ui-help">Показано ${shown} из ${total}</span>`}
+
+function renderResearch(){
+  const s=state.snapshot;
+  $("#research").innerHTML=`<div class="page-intro"><div><p class="ui-eyebrow">CRM / артисты</p><h1 id="research-title">Лиды.</h1><p>Проверьте найденные профили. Для рассылки доступны только одобренные.</p></div></div>
+    <div class="metric-strip">${metric("Всего в CRM",s.research.counts.total)}${metric("На проверке",s.research.counts.review)}${metric("Готовы",s.research.counts.ready)}</div>
+    <div class="simple-grid"><div>${panel("Задания поиска",`${s.research.jobs.slice(0,8).map(j=>`<div class="table-row"><div><strong>${esc(j.name)}</strong><small>${esc(j.status)} · ${j.found}/${j.target}</small></div></div>`).join("")||emptyState("Заданий пока нет","Когда агент начнёт поиск, прогресс появится здесь.")}<hr class="ui-divider"><form id="job-form" class="form-stack">${field("Название",`<input name="name" required maxlength="100" placeholder="Например, артисты из Нью-Йорка">`)}${field("Источники поиска",`<input name="seeds" required placeholder="producer_a, producer_b">`,"Укажите исходные аккаунты через запятую.")}${field("Тип источника",`<select name="source"><option value="follower">Подписчики</option><option value="tagged">Отметки</option><option value="search">Поиск</option></select>`)}${field("Цель",`<input name="targetCount" type="number" min="1" max="500" value="20" required>`)}${button("Создать задание",{tone:"quiet",type:"submit"})}</form>`,{eyebrow:"01 / ресёрч"})}</div>
+    <div>${panel("Список лидов",`${field("Поиск по @имени",`<input id="research-search" type="search" value="${esc(state.researchQuery)}" placeholder="Введите username">`)}<div id="research-list" class="table-list research-list">${researchRows()}</div><div id="research-more" class="lead-more">${researchMore()}</div>`,{eyebrow:"02 / проверка"})}</div></div>`;
+}
+
+function leadChoices(){
+  const items=readyLeads();
+  const html=items.map(x=>`<label class="ui-lead"><input type="checkbox" data-lead-id="${esc(x.id)}" ${(state.allReadySelected?!state.excludedLeads.has(x.id):state.selectedLeads.has(x.id))?"checked":""}><span class="ui-lead__copy"><strong>@${esc(x.handle)}</strong><small>${esc(x.genre||"Артист")} · ${x.followers!=null?`${x.followers} подписчиков · `:""}${esc(x.source?.seed||"CRM")}</small></span></label>`).join("");
+  return html||emptyState("Нет подходящих лидов","Проверьте поиск или одобрите профили в CRM.");
+}
+function leadMore(){
+  const total=state.readyPage?.total??state.snapshot.research.counts.ready;
+  const shown=readyLeads().length;
+  return shown<total?`${button(`Показать ещё · ${total-shown}`,{tone:"quiet",action:"more-ready"})}<span class="ui-help">Показано ${shown} из ${total}</span>`:`<span class="ui-help">Показано ${shown} из ${total}</span>`;
+}
+
+function planCreator(){
+  const sample=draftSample();
+  return panel("Новая кампания",`<form id="plan-form" class="form-stack">
+    ${field("Название кампании",`<input id="plan-name" name="name" value="${esc(state.planName)}" maxlength="120" required placeholder="Например, осень / новые артисты">`)}
+    ${field("Текст первого сообщения",`<textarea id="plan-body" name="body" maxlength="2000" required placeholder="Напишите сообщение, которое получит артист.">${esc(state.planBody)}</textarea>`,"Используйте {{handle}}, чтобы подставить @имя. Текст можно изменить до запуска.")}
+    <div class="preview"><div class="preview__head"><strong>Так увидит получатель</strong>${badge(`@${sample}`)}</div><p id="draft-preview">${esc(renderMessage(state.planBody,sample)||"Здесь появится пример сообщения.")}</p></div>
+    <hr class="ui-divider">
+    <div class="ui-panel__head"><div><h3>Кому отправить</h3><p class="section-caption">Все готовые лиды — одним нажатием. При желании снимите галочку с отдельных.</p></div><span id="selection-count">${badge(`${state.allReadySelected?state.snapshot.research.counts.ready-state.excludedLeads.size:state.selectedLeads.size} выбрано`)}</span></div>
+    <div class="lead-toolbar">${field("Найти получателя",`<input id="lead-search" type="search" value="${esc(state.leadQuery)}" placeholder="Поиск по @имени">`)}${button(state.allReadySelected?"Все готовые выбраны":"Выбрать всех готовых",{tone:"soft",action:"select-all-ready",disabled:state.allReadySelected||!state.snapshot.research.counts.ready})}</div>
+    <div id="lead-choices" class="lead-list">${leadChoices()}</div>
+    <div id="lead-more" class="lead-more">${leadMore()}</div>
+    <div class="selection-summary"><span>${state.allReadySelected?"В кампанию попадут все готовые из CRM на момент сохранения, включая другие страницы.":`Выберите отдельных артистов или весь готовый список.`}</span>${button("Снять выбор",{tone:"text",action:"clear-leads"})}</div>
+    <div class="form-actions"><span class="ui-help">${state.mailer.chromeReady&&state.selectedAccountId?"Сохраним список и проверим один DM без отправки.":"Подключите Chrome и аккаунт для проверки."}</span>${button(state.mailer.chromeReady&&state.selectedAccountId?"Сохранить и проверить":"Сохранить кампанию",{tone:"primary",type:"submit",disabled:!(state.allReadySelected||state.selectedLeads.size)||state.busy,extra:'id="continue-button"'})}</div>
+  </form>`,{eyebrow:"01 / сообщение и получатели"});
+}
+function draftSample(){
+  const allReady=readyLeads();
+  return allReady.find(x=>state.allReadySelected?!state.excludedLeads.has(x.id):state.selectedLeads.has(x.id))?.handle||allReady[0]?.handle||"artist";
+}
+function updateDraftPreview(){
+  const sample=draftSample();
+  const preview=$("#draft-preview");if(preview)preview.textContent=renderMessage(state.planBody,sample)||"Здесь появится пример сообщения.";
+  const badgeEl=$(".preview__head .ui-badge");if(badgeEl)badgeEl.textContent=`@${sample}`;
+}
+
+function accountsPanel(){
+  const accounts=state.mailer.accounts||[];
+  const rows=accounts.map(a=>`<div class="account-item"><div class="account-item__copy"><strong>${esc(a.username||"Аккаунт")}</strong><small>Лимит ${a.dailyCap} / 24 часа${a.cooldownUntil&&Date.parse(a.cooldownUntil)>Date.now()?` · пауза до ${dateTime(a.cooldownUntil)}`:""}</small></div>${a.enabled?badge("Активен","success"):button("Выбрать",{tone:"quiet",action:"activate-account",disabled:activeRun(),extra:`data-id="${esc(a.id)}"`})}</div>`).join("");
+  const chrome=state.mailer.chromeReady?`<div class="ui-inline-note">Chrome подключён. Проверьте, что вы вошли в нужный Instagram-аккаунт в рабочем окне.</div>`:`<div class="ui-inline-note ui-inline-note--warning">Откройте <strong>mailer/start-chrome.bat</strong>, затем войдите в Instagram в этом окне.</div>`;
+  const add=`<hr class="ui-divider"><form id="account-form" class="form-stack">${field("Добавить или сменить Instagram",`<input name="username" required maxlength="30" autocomplete="off" placeholder="@your_account">`,"Для другого аккаунта войдите в него в рабочем Chrome. После смены нужна новая проверка DM.")}${button("Добавить аккаунт",{tone:"quiet",type:"submit",disabled:activeRun()})}</form>`;
+  return panel("Ваш аккаунт",`${rows||emptyState("Аккаунт не добавлен","Введите @имя аккаунта, с которого клиент будет отправлять сообщения.")}${chrome}${add}`,{eyebrow:"02 / отправитель"});
+}
+
+function planChooser(){
+  const plans=state.snapshot.campaigns;
+  const selected=currentPlan();
+  const options=plans.map(c=>`<button type="button" class="ui-campaign" data-action="select-plan" data-id="${esc(c.id)}" aria-current="${c.id===state.selectedPlanId}"><strong>${esc(c.name)}</strong><small>${esc(c.status)} · ${c.stats.ready||0} ожидают · ${c.stats.contacted||0} отправлено</small></button>`).join("");
+  let detail=emptyState("Выберите кампанию","Сохраните новую кампанию слева или откройте существующую.");
+  if(selected){
+    const recipient=state.planLeads.filter(x=>x.state==="ready");
+    detail=`<div class="run-details">${badge(selected.status==="running"?"В работе":selected.status==="approved"?"Готова":selected.status==="stopped"?"На паузе":"Черновик",selected.status==="running"?"success":"neutral")}${badge(`${recipient.length} готовы`)}${badge(state.hasPreview?"Проверка пройдена":"Нужна проверка",state.hasPreview?"success":"warning")}</div>
+      <p class="run-summary">Получатели: <b>${recipient.slice(0,5).map(x=>`@${esc(x.handle)}`).join(", ")}${recipient.length>5?` и ещё ${recipient.length-5}`:""}</b></p>
+      <div class="campaign-message">${esc(selected.template.body)}</div>
+      ${selected.status!=="running"?`<form id="message-form" class="form-stack">${field("Изменить сообщение",`<textarea name="body" maxlength="2000" required>${esc(state.editBody||selected.template.body)}</textarea>`,"После изменения потребуется новая проверка.")}${button("Сохранить новый текст",{tone:"quiet",type:"submit"})}</form>`:`<p class="ui-help">Чтобы изменить текст, сначала остановите кампанию.</p>`}`;
+  }
+  return panel("Кампания",`${options||emptyState("Кампаний пока нет","Создайте первую слева.")}<hr class="ui-divider">${detail}`,{eyebrow:"03 / готовый список"});
+}
+
+function runPanel(){
+  const plan=currentPlan(),run=state.mailer.run||{state:"idle",lines:[]};
+  const count=state.planLeads.filter(x=>x.state==="ready").length;
+  const remaining=state.snapshot.state.quota.firstDmRemaining;
+  const maxAllowed=Math.min(35,count||1,remaining||1);
+  const canRun=Boolean(plan&&state.selectedAccountId&&state.mailer.chromeReady&&count&&remaining&&!activeRun());
+  const liveAllowed=canRun&&state.hasPreview&&state.snapshot.state.mode!=="dry_run";
+  const runLabel={idle:"Не запущена",running:"Идёт отправка",stopping:"Останавливается",finished:"Завершена",failed:"Нужна проверка"}[run.state]||run.state;
+  const statusTone=run.state==="running"?"success":run.state==="failed"?"danger":run.state==="stopping"?"warning":"neutral";
+  const status=`<div class="run-details">${badge(runLabel,statusTone)}${run.startedAt?badge(`Старт ${dateTime(run.startedAt)}`):""}</div>`;
+  const controls=`${field("Сообщений в этой партии",`<input id="batch-size" type="number" min="1" max="${maxAllowed}" value="${Math.min(state.max,maxAllowed)}" ${activeRun()?"disabled":""}>`,"Проверка — один получатель. Реальная партия — до текущего лимита.")}
+    <div class="run-controls">${button("Проверить без отправки",{tone:"soft",action:"run-dry",disabled:!canRun||state.busy})}${button("Начать отправку",{tone:"primary",action:"run-live",disabled:!liveAllowed||state.busy})}${activeRun()?button("Остановить",{tone:"danger",action:"stop-run"}):""}</div>`;
+  const gate=state.snapshot.state.mode!=="dry_run"?`<div class="ui-inline-note">Отправка разрешена для этого запуска. После завершения режим вернётся к проверке. ${activeRun()?"Для прекращения партии используйте «Остановить».":button("Выключить сейчас",{tone:"text",action:"disable-live"})}</div>`:`<form id="enable-form" class="form-stack">${field("Разрешение на реальные сообщения",`<input name="confirmation" autocomplete="off" placeholder="SEND_REAL_MESSAGES" required>`,"После успешной проверки введите фразу SEND_REAL_MESSAGES. Это разрешит отправку из панели.")}${button("Разрешить отправку",{tone:"quiet",type:"submit",disabled:!state.hasPreview})}</form>`;
+  const logs=(run.lines||[]).slice(-12).join("\n");
+  return panel("Запуск",`${status}${!plan?`<p class="ui-help">Сначала сохраните и выберите кампанию.</p>`:""}${controls}<hr class="ui-divider">${gate}${activeRun()?`<p class="ui-help">Остановка мягкая: текущий шаг завершится, следующий получатель не начнётся.</p>`:""}${logs?`<hr class="ui-divider"><p class="ui-eyebrow">Ход выполнения</p><pre class="ui-log">${esc(logs)}</pre>`:""}`,{eyebrow:"04 / проверка и отправка"});
+}
+
+function renderOutreach(){
+  const s=state.snapshot;
+  const run=state.mailer.run;
+  $("#outreach").innerHTML=`<div class="page-intro"><div><p class="ui-eyebrow">Управление сообщениями</p><h1 id="outreach-title">Рассылка.</h1><p>Выберите артистов из CRM, проверьте текст и запускайте отправку со своего аккаунта.</p></div><div class="page-intro__side">${badge(run.state==="running"?"Партия выполняется":run.state==="stopping"?"Остановка запрошена":"Клиентский режим",run.state==="running"?"success":"neutral")}</div></div>
+    <div class="metric-strip">${metric("Готовы в CRM",s.research.counts.ready,"Только одобренные")}${metric("Осталось за 24 часа",s.state.quota.firstDmRemaining,s.state.quota.windowEndsAt?`Окно до ${dateTime(s.state.quota.windowEndsAt)}`:"На текущий момент")}${metric("В текущей кампании",currentPlan()?.stats.ready||0,currentPlan()?.name||"Выберите кампанию")}</div>
+    <div class="outreach-grid"><div class="outreach-main">${planCreator()}${planChooser()}</div><div class="outreach-side">${accountsPanel()}${runPanel()}</div></div>`;
+}
+
+function renderInbox(){
+  const s=state.snapshot;
+  const rows=s.inbox.slice(0,80).map(item=>`<div class="table-row"><div><strong>${ig(item.handle)}</strong><small>${esc(item.kind)} · ${dateTime(item.received)}</small><p>${esc(item.body)}</p></div></div>`).join("");
+  const notes=s.notifications.filter(x=>x.status!=="sent").slice(0,10).map(x=>`<div class="table-row"><div><strong>${esc(x.kind)}</strong><small>${esc(x.status)}</small><p>${esc(x.text)}</p></div>${button("Повторить",{tone:"quiet",action:"retry-note",extra:`data-id="${esc(x.id)}"`})}</div>`).join("");
+  $("#inbox").innerHTML=`<div class="page-intro"><div><p class="ui-eyebrow">Ответы и контакты</p><h1 id="inbox-title">Входящие.</h1><p>Ответы артистов и уведомления после отправки.</p></div></div><div class="simple-grid">${panel("Сообщения",rows||emptyState("Пока нет ответов","Когда артист ответит, событие появится здесь."),{eyebrow:"01 / direct"})}${panel("Уведомления",notes||emptyState("Всё обработано","Новых уведомлений нет."),{eyebrow:"02 / сигналы"})}</div>`;
+}
+
+function render(){
+  if(!state.snapshot||!state.mailer)return;
+  header();renderHome();renderResearch();renderOutreach();renderInbox();
+}
+
+async function load(force=false){
+  try{
+    const [snapshot,mailer]=await Promise.all([api("/panel/snapshot"),api("/operator/mailer")]);
+    state.snapshot=snapshot;state.mailer=mailer;
+    if(!state.readyPage||(!state.leadQuery&&state.readyPage.total!==snapshot.research.counts.ready))await fetchReadyPage(true);
+    if(!state.researchPage||force||(!state.researchQuery&&state.researchPage.total!==snapshot.research.counts.total))await fetchResearchPage(true);
+    if(!mailer.accounts.some(a=>a.id===state.selectedAccountId&&a.enabled))state.selectedAccountId=mailer.accounts.find(a=>a.enabled)?.id||null;
+    if(!state.selectedPlanId&&snapshot.campaigns.length)state.selectedPlanId=snapshot.campaigns.find(c=>c.status==="running")?.id||snapshot.campaigns[0].id;
+    if(state.selectedPlanId){const details=await api(`/operator/plans/${encodeURIComponent(state.selectedPlanId)}/leads?accountId=${encodeURIComponent(state.selectedAccountId||"")}`);state.planLeads=details.leads;state.hasPreview=details.hasPreview}
+    const focused=document.activeElement;
+    if(!force&&focused&&/^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName)&&focused.closest(".view.active")){header();return}
+    render();
+  }catch(error){toast(error.message,true)}
+}
+
+function openTab(tab){state.tab=titles[tab]?tab:"outreach";history.replaceState(null,"",`#${state.tab}`);header();window.scrollTo(0,0)}
+async function act(promise,success){
+  if(state.busy){toast("Дождитесь завершения текущего действия",true);return}
+  state.busy=true;document.body.setAttribute("aria-busy","true");
+  const buttons=[...document.querySelectorAll("button:not(:disabled)")];buttons.forEach(button=>button.disabled=true);
+  try{await promise();state.busy=false;toast(success);await load(true)}catch(error){state.busy=false;toast(error.message,true);render()}
+  finally{buttons.forEach(button=>{if(button.isConnected)button.disabled=false});document.body.removeAttribute("aria-busy")}
+}
+
+document.addEventListener("click",async event=>{
+  const tab=event.target.closest("[data-tab]");if(tab){openTab(tab.dataset.tab);return}
+  const trigger=event.target.closest("[data-action]");if(!trigger)return;
+  const action=trigger.dataset.action,id=trigger.dataset.id;
+  if(action==="go-outreach"){openTab("outreach");return}
+  if(action==="open-plan"){state.selectedPlanId=id;state.editBody="";openTab("outreach");await load(true);return}
+  if(action==="select-plan"){state.selectedPlanId=id;state.editBody="";await load(true);return}
+  if(action==="activate-account"){await act(async()=>{const account=await post(`/operator/mailer/accounts/${encodeURIComponent(id)}/activate`);state.selectedAccountId=account.id;state.hasPreview=false},"Аккаунт выбран. Войдите в него в рабочем Chrome и проверьте DM заново.");return}
+  if(action==="clear-leads"){state.selectedLeads.clear();state.excludedLeads.clear();state.allReadySelected=false;renderOutreach();return}
+  if(action==="select-all-ready"){state.allReadySelected=true;state.selectedLeads.clear();state.excludedLeads.clear();renderOutreach();return}
+  if(action==="more-ready"){try{await fetchReadyPage(false)}catch(error){toast(error.message,true)}return}
+  if(action==="more-research"){try{await fetchResearchPage(false)}catch(error){toast(error.message,true)}return}
+  if(action==="run-dry"||action==="run-live"){
+    const plan=currentPlan();if(!plan)return toast("Сначала выберите кампанию",true);
+    const dryRun=action==="run-dry";
+    const max=dryRun?1:Math.min(Number(state.max),state.planLeads.filter(x=>x.state==="ready").length,state.snapshot.state.quota.firstDmRemaining);
+    await act(()=>post("/operator/mailer/start",{campaignId:plan.id,accountId:state.selectedAccountId,max,dryRun}),dryRun?"Проверочный прогон запущен":"Отправка запущена");return;
+  }
+  if(action==="stop-run"){await act(()=>post("/operator/mailer/stop"),"Остановка запрошена. Текущий шаг завершится безопасно.");return}
+  if(action==="disable-live"){await act(()=>post("/runtime/disable-real-sending"),"Отправка выключена");return}
+  if(action==="approve-lead"||action==="reject-lead"||action==="dnc-lead"){
+    const decision=action==="approve-lead"?"approve":action==="reject-lead"?"reject":"dnc";
+    await act(()=>post(`/research/leads/${encodeURIComponent(id)}/${decision}`),"Статус лида обновлён");return;
+  }
+  if(action==="retry-note"){await act(()=>post(`/notifications/${encodeURIComponent(id)}/retry`),"Уведомление повторно отправлено")}
+});
+
+document.addEventListener("input",event=>{
+  const el=event.target;
+  if(el.id==="plan-name")state.planName=el.value;
+  if(el.id==="plan-body"){
+    state.planBody=el.value;
+    updateDraftPreview();
+  }
+  if(el.id==="lead-search"){
+    state.leadQuery=el.value.trim().replace(/^@/,"").toLowerCase();
+    const list=$("#lead-choices");if(list)list.innerHTML=emptyState("Ищем в CRM","Поиск идёт по всему списку готовых лидов.");
+    clearTimeout(readySearchTimer);
+    readySearchTimer=setTimeout(()=>fetchReadyPage(true).catch(error=>toast(error.message,true)),180);
+  }
+  if(el.id==="research-search"){
+    state.researchQuery=el.value.trim().replace(/^@/,"").toLowerCase();const list=$("#research-list");if(list)list.innerHTML=emptyState("Ищем в CRM","Поиск идёт по всем найденным лидам.");
+    clearTimeout(researchSearchTimer);researchSearchTimer=setTimeout(()=>fetchResearchPage(true).catch(error=>toast(error.message,true)),180);
+  }
+  if(el.id==="batch-size")state.max=Number(el.value);
+});
+
+document.addEventListener("change",event=>{
+  const el=event.target;
+  if(el.matches("[data-lead-id]")){if(state.allReadySelected){el.checked?state.excludedLeads.delete(el.dataset.leadId):state.excludedLeads.add(el.dataset.leadId)}else{el.checked?state.selectedLeads.add(el.dataset.leadId):state.selectedLeads.delete(el.dataset.leadId)}const count=$("#selection-count");const total=state.allReadySelected?state.snapshot.research.counts.ready-state.excludedLeads.size:state.selectedLeads.size;if(count)count.innerHTML=badge(`${total} выбрано`);const submit=$("#continue-button");if(submit)submit.disabled=!total;updateDraftPreview()}
+});
+
+document.addEventListener("submit",async event=>{
+  const form=event.target;if(!form.id)return;event.preventDefault();
+  const data=Object.fromEntries(new FormData(form));
+  if(form.id==="plan-form"){
+    if(!state.allReadySelected&&!state.selectedLeads.size)return toast("Выберите хотя бы одного получателя",true);
+    const autoPreview=Boolean(state.mailer.chromeReady&&state.selectedAccountId);
+    await act(async()=>{const plan=await post("/operator/plans",{name:state.planName,body:state.planBody,leadIds:[...state.selectedLeads],allReady:state.allReadySelected,excludedIds:[...state.excludedLeads]});state.selectedPlanId=plan.id;state.selectedLeads.clear();state.excludedLeads.clear();state.allReadySelected=false;state.planName="";state.planBody="";state.editBody="";state.max=35;if(autoPreview)await post("/operator/mailer/start",{campaignId:plan.id,accountId:state.selectedAccountId,max:1,dryRun:true})},autoPreview?"Кампания сохранена. Проверка одного DM запущена.":"Кампания сохранена. Подключите Chrome для проверки.");
+  }
+  if(form.id==="account-form")await act(async()=>{const account=await post("/operator/mailer/accounts",{username:data.username});state.selectedAccountId=account.id;state.hasPreview=false},"Аккаунт добавлен и выбран. Войдите в него в рабочем Chrome.");
+  if(form.id==="message-form"){
+    const plan=currentPlan();if(plan)await act(()=>patch(`/operator/plans/${encodeURIComponent(plan.id)}/message`,{body:data.body}),"Текст обновлён. Нужен новый проверочный прогон.");
+  }
+  if(form.id==="enable-form")await act(()=>post("/runtime/enable-real-sending",{confirmation:data.confirmation}),"Реальная отправка разрешена для запуска");
+  if(form.id==="job-form")await act(()=>post("/research/jobs",{name:data.name,seeds:String(data.seeds).split(",").map(x=>x.trim()).filter(Boolean),sources:[data.source],targetCount:Number(data.targetCount)}),"Задание поиска создано");
+});
+
+window.addEventListener("hashchange",()=>{const tab=location.hash.slice(1);if(titles[tab]){state.tab=tab;header()}});
+new EventSource("/api/panel/events").addEventListener("state",()=>load());
+setInterval(()=>load(),5000);
+load(true);

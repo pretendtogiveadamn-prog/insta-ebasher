@@ -68,6 +68,7 @@ export function startHeartbeat(v1, { v1AccountId, username, intervalMs = HEARTBE
   timer.unref?.();
   const first = beat();
   return {
+    ready: first,
     stop: () => {
       stopped = true;
       clearInterval(timer);
@@ -108,6 +109,7 @@ export async function runMailer({
   const freshAccount = () => db.prepare("SELECT * FROM accounts WHERE id = ?").get(account.id) ?? account;
 
   try {
+    await hb.ready;
     for (let i = 0; i < maxSends; i++) {
       const acc = freshAccount();
       if (isCooldownActive(acc)) {

@@ -1,1 +1,35 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>INSTA-EBASHER</title><link rel="stylesheet" href="/style.css"><body><aside><b>INSTA<br>EBASHER</b><button data-tab="home">Главная</button><button data-tab="research">Ресёрч</button><button data-tab="outreach">Рассылка</button><button data-tab="inbox">Входящие</button></aside><main><header><small>ЛОКАЛЬНАЯ СИСТЕМА</small><h1>INSTA-EBASHER</h1><strong id="mode">—</strong></header><p id="notice"></p><section id="home" class="tab"></section><section id="research" class="tab"></section><section id="outreach" class="tab"></section><section id="inbox" class="tab"></section></main><script type="module" src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f8f3">
+  <title>INSTA-EBASHER — рабочая панель</title>
+  <link rel="stylesheet" href="/components.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">К содержимому</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Навигация">
+      <a class="brand" href="#home" aria-label="INSTA-EBASHER, главная"><span class="brand-mark">I.</span><span class="brand-copy">INSTA<br>EBASHER<small>WORKSPACE</small></span></a>
+      <nav class="nav" aria-label="Разделы">
+        <button type="button" data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8v9H3zM9 20v-6h6v6"/></svg>Обзор</button>
+        <button type="button" data-tab="research"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>Лиды</button>
+        <button type="button" data-tab="outreach"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v14H8l-5 3zM7 9h10M7 13h7"/></svg>Рассылка</button>
+        <button type="button" data-tab="inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 7l9 7 9-7"/></svg>Входящие</button>
+      </nav>
+      <div class="sidebar-foot"><strong>Локальная панель</strong>Данные и управление доступны только на этом компьютере.</div>
+    </aside>
+    <main class="workspace" id="main">
+      <header class="topbar"><div class="topbar__path">РАБОЧЕЕ ПРОСТРАНСТВО <span aria-hidden="true">/</span> <strong id="current-page">ОБЗОР</strong></div><div class="topbar__right"><span id="connection"></span><span id="mode"></span></div></header>
+      <div id="toast" class="ui-toast" role="status" aria-live="polite" hidden></div>
+      <section id="home" class="view" aria-labelledby="home-title"></section>
+      <section id="research" class="view" aria-labelledby="research-title"></section>
+      <section id="outreach" class="view" aria-labelledby="outreach-title"></section>
+      <section id="inbox" class="view" aria-labelledby="inbox-title"></section>
+    </main>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

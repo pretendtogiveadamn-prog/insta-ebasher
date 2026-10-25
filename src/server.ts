@@ -1,9 +1,11 @@
 import express from "express";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { Events } from "./events.js";
 import { Store } from "./store.js";
+import { MailerControl } from "./mailer-control.js";
 
 const c = config();
 const store = new Store(c.db);
@@ -12,8 +14,18 @@ let dry = c.dryRun;
 let limit = store.dailyLimit(c.limit);
 const app = express();
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "public")));
+const moduleDir=dirname(fileURLToPath(import.meta.url));
+const root=existsSync(join(moduleDir,"..","public"))?join(moduleDir,".."):join(moduleDir,"..","..");
+app.use(express.static(join(root,"public")));
 const changed = () => events.emit();
+const mailer=new MailerControl(root,`http://${c.host==="::1"?"[::1]":c.host}:${c.port}`,()=>{
+  const status=mailer.status();
+  if(status.state==="finished"||status.state==="failed"){
+    if(status.campaignId&&store.campaignBy(status.campaignId)?.status==="running")store.campaignState(status.campaignId,"stop");
+    if(!dry){dry=true;store.audit(null,"runtime","real_sending_auto_disabled_after_worker");}
+  }
+  changed();
+},process.env.IH_MAILER_DIR);
 const obj = (value: any) => { if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("JSON object is required"); return value; };
 
 async function notify(notification: any) {
@@ -68,6 +80,53 @@ app.post("/api/campaigns", (req, res) => { const campaign = store.campaign(obj(r
 app.post("/api/campaigns/:id/add-approved-leads", (req, res) => { const added = store.addReady(req.params.id); changed(); res.json({ added }); });
 app.post("/api/campaigns/:id/leads", (req, res) => { const added = store.addLeads(req.params.id, obj(req.body).leadIds); changed(); res.json({ added }); });
 app.post("/api/campaigns/:id/:action", (req, res) => { if (!(["approve", "start", "stop"] as string[]).includes(req.params.action)) throw Error("Invalid campaign action"); const campaign = store.campaignState(req.params.id, req.params.action as any); changed(); res.json(campaign); });
+app.get("/api/operator/mailer",async(_req,res)=>{
+  let chromeReady=false;
+  try{const result=await fetch("http://127.0.0.1:9222/json/version",{signal:AbortSignal.timeout(1500)});chromeReady=result.ok}catch{}
+  res.json({accounts:mailer.accounts(),run:mailer.status(),chromeReady});
+});
+app.post("/api/operator/mailer/accounts",(req,res)=>{
+  if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
+  const account=mailer.addLocalAccount(obj(req.body).username);
+  dry=true;store.audit(null,"mailer_account",`created_and_activated:${account.id}`);changed();res.status(201).json(account);
+});
+app.post("/api/operator/mailer/accounts/:id/activate",(req,res)=>{
+  if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
+  const account=mailer.activateLocalAccount(req.params.id);
+  dry=true;store.audit(null,"mailer_account",`activated:${account.id}`);changed();res.json(account);
+});
+app.get("/api/operator/leads",(req,res)=>res.json(store.operatorLeads({state:String(req.query.state||"ready"),query:String(req.query.query||""),offset:Number(req.query.offset||0),limit:Number(req.query.limit||100)})));
+app.post("/api/operator/plans",(req,res)=>{const plan=store.createOperatorCampaign(obj(req.body));changed();res.status(201).json({...plan,leads:store.campaignLeads(plan.id)})});
+app.get("/api/operator/plans/:id/leads",(req,res)=>{const account=mailer.accounts().find(a=>a.id===String(req.query.accountId||"")&&a.enabled);res.json({leads:store.campaignLeads(req.params.id),hasPreview:store.hasCurrentPreview(req.params.id,account?.v1AccountId||"")})});
+app.patch("/api/operator/plans/:id/message",(req,res)=>{const plan=store.replaceCampaignMessage(req.params.id,obj(req.body).body);changed();res.json(plan)});
+app.post("/api/operator/mailer/start",async(req,res)=>{
+  const body=obj(req.body);
+  if(typeof body.campaignId!=="string"||typeof body.accountId!=="string"||typeof body.dryRun!=="boolean"||!Number.isInteger(body.max))throw Error("Выберите кампанию, аккаунт и размер партии");
+  const campaign=store.campaignBy(body.campaignId);
+  if(!campaign||!["approved","stopped","running"].includes(campaign.status))throw Error("Кампания не готова к запуску");
+  if(campaign.status==="running"&&store.state(limit,dry).activeCampaignId!==campaign.id)throw Error("Сначала остановите другую кампанию");
+  const ready=store.campaignLeads(campaign.id).filter(x=>x.state==="ready").length;
+  if(!ready)throw Error("В кампании нет получателей, готовых к отправке");
+  const remaining=store.state(limit,dry).quota.firstDmRemaining;
+  if(!remaining)throw Error("Суточный лимит первых сообщений исчерпан");
+  if(body.max<1||body.max>Math.min(35,ready,remaining))throw Error(`Размер партии: от 1 до ${Math.min(35,ready,remaining)}`);
+  if(!body.dryRun&&dry)throw Error("Включите реальную отправку перед запуском");
+  const sender=mailer.accounts().find(a=>a.id===body.accountId&&a.enabled);
+  if(!sender)throw Error("Выберите включённый Instagram-аккаунт");
+  if(!body.dryRun&&!store.hasCurrentPreview(campaign.id,sender.v1AccountId||""))throw Error("Сначала проверьте эту версию сообщения с выбранным аккаунтом");
+  if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
+  const chrome=await fetch("http://127.0.0.1:9222/json/version",{signal:AbortSignal.timeout(1500)}).catch(()=>null);
+  if(!chrome?.ok)throw Error("Chrome для рассылки не открыт. Запустите mailer/start-chrome.bat и войдите в Instagram");
+  const wasRunning=campaign.status==="running";
+  if(!wasRunning)store.campaignState(campaign.id,"start");
+  try{const run=mailer.start({accountId:body.accountId,campaignId:campaign.id,max:body.max,dryRun:body.dryRun});store.audit(null,"mailer_run",`started:${campaign.id};dry=${body.dryRun};max=${body.max}`);changed();res.status(201).json(run)}
+  catch(error){if(!wasRunning)store.campaignState(campaign.id,"stop");throw error}
+});
+app.post("/api/operator/mailer/stop",(_req,res)=>{
+  const run=mailer.status();
+  if(run.campaignId){const campaign=store.campaignBy(run.campaignId);if(campaign?.status==="running")store.campaignState(campaign.id,"stop")}
+  store.audit(null,"mailer_run","stop_requested");changed();res.json(mailer.requestStop());
+});
 app.post("/api/runtime/enable-real-sending", (req, res) => { if (obj(req.body).confirmation !== "SEND_REAL_MESSAGES") throw Error("Invalid confirmation"); dry = false; store.audit(null, "runtime", "real_sending_enabled"); changed(); res.json(store.state(limit, dry)); });
 app.post("/api/runtime/disable-real-sending", (_req, res) => { dry = true; const revoked = store.revokeLiveOutreachLeases(); store.audit(null, "runtime", `real_sending_disabled;revoked=${revoked}`); changed(); res.json({ ...store.state(limit, dry), revoked }); });
 app.post("/api/runtime/daily-limit", (req, res) => { limit = store.setDailyLimit(obj(req.body).limit); changed(); res.json(store.state(limit, dry)); });
@@ -82,5 +141,19 @@ app.post("/api/notifications/:id/retry", async (req, res) => { const notificatio
 app.use((error: any, _req: any, res: any, _next: any) => { const message=error instanceof Error?error.message:"Request failed"; const internal=/sqlite|sql(?:ite)?|constraint|syntax|stack|better-sqlite/i.test(message); res.status(/not found/i.test(message)?404:internal?500:400).json({ error:internal?"Request could not be completed":message }); });
 const server = app.listen(c.port, c.host, () => console.log(`INSTA-EBASHER on ${c.host}:${c.port}`));
 let shuttingDown = false;
-const shutdown = () => { if (shuttingDown) return; shuttingDown = true; server.close(() => { store.close(); process.exit(0); }); server.closeAllConnections(); setTimeout(() => { store.close(); process.exit(0); }, 3000).unref(); };
+const shutdown = () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const run = mailer.status();
+  if (run.state === "running" || run.state === "stopping") {
+    if (run.campaignId && store.campaignBy(run.campaignId)?.status === "running") store.campaignState(run.campaignId, "stop");
+    mailer.requestStop();
+  }
+  const finish = () => {
+    if (["running", "stopping"].includes(mailer.status().state)) { setTimeout(finish, 1000); return; }
+    server.close(() => { store.close(); process.exit(0); });
+    server.closeAllConnections();
+  };
+  finish();
+};
 process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);

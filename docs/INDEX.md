@@ -11,4 +11,5 @@
 - `../prompts/client-onboarding-agent.md` — exact install and first-brief runbook for the client's agent.
 - `../prompts/batch-runner.md` — leave-running batch loop for research, outreach and inbox.
 - `CURRENT_STATE.md` — verified implementation truth.
+- `FEATURES.md` — client panel QA inventory and remaining owner-session check.
 - `08_AUDIT.md` — полный аудит: находки, доказательства, фиксы.
