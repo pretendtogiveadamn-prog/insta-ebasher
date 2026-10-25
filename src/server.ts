@@ -25,7 +25,7 @@ const mailer=new MailerControl(root,`http://${c.host==="::1"?"[::1]":c.host}:${c
     if(!dry){dry=true;store.audit(null,"runtime","real_sending_auto_disabled_after_worker");}
   }
   changed();
-});
+},process.env.IH_MAILER_DIR);
 const obj = (value: any) => { if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("JSON object is required"); return value; };
 
 async function notify(notification: any) {
@@ -85,9 +85,19 @@ app.get("/api/operator/mailer",async(_req,res)=>{
   try{const result=await fetch("http://127.0.0.1:9222/json/version",{signal:AbortSignal.timeout(1500)});chromeReady=result.ok}catch{}
   res.json({accounts:mailer.accounts(),run:mailer.status(),chromeReady});
 });
-app.post("/api/operator/mailer/accounts",(req,res)=>{const account=mailer.addLocalAccount(obj(req.body).username);store.audit(null,"mailer_account",`created:${account.id}`);changed();res.status(201).json(account)});
+app.post("/api/operator/mailer/accounts",(req,res)=>{
+  if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
+  const account=mailer.addLocalAccount(obj(req.body).username);
+  dry=true;store.audit(null,"mailer_account",`created_and_activated:${account.id}`);changed();res.status(201).json(account);
+});
+app.post("/api/operator/mailer/accounts/:id/activate",(req,res)=>{
+  if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
+  const account=mailer.activateLocalAccount(req.params.id);
+  dry=true;store.audit(null,"mailer_account",`activated:${account.id}`);changed();res.json(account);
+});
+app.get("/api/operator/leads",(req,res)=>res.json(store.operatorLeads({state:String(req.query.state||"ready"),query:String(req.query.query||""),offset:Number(req.query.offset||0),limit:Number(req.query.limit||100)})));
 app.post("/api/operator/plans",(req,res)=>{const plan=store.createOperatorCampaign(obj(req.body));changed();res.status(201).json({...plan,leads:store.campaignLeads(plan.id)})});
-app.get("/api/operator/plans/:id/leads",(req,res)=>res.json({leads:store.campaignLeads(req.params.id),hasPreview:store.hasCurrentPreview(req.params.id,String(req.query.accountId||""))}));
+app.get("/api/operator/plans/:id/leads",(req,res)=>{const account=mailer.accounts().find(a=>a.id===String(req.query.accountId||"")&&a.enabled);res.json({leads:store.campaignLeads(req.params.id),hasPreview:store.hasCurrentPreview(req.params.id,account?.v1AccountId||"")})});
 app.patch("/api/operator/plans/:id/message",(req,res)=>{const plan=store.replaceCampaignMessage(req.params.id,obj(req.body).body);changed();res.json(plan)});
 app.post("/api/operator/mailer/start",async(req,res)=>{
   const body=obj(req.body);
@@ -101,7 +111,9 @@ app.post("/api/operator/mailer/start",async(req,res)=>{
   if(!remaining)throw Error("Суточный лимит первых сообщений исчерпан");
   if(body.max<1||body.max>Math.min(35,ready,remaining))throw Error(`Размер партии: от 1 до ${Math.min(35,ready,remaining)}`);
   if(!body.dryRun&&dry)throw Error("Включите реальную отправку перед запуском");
-  if(!body.dryRun&&!store.hasCurrentPreview(campaign.id,body.accountId))throw Error("Сначала проверьте эту версию сообщения с выбранным аккаунтом");
+  const sender=mailer.accounts().find(a=>a.id===body.accountId&&a.enabled);
+  if(!sender)throw Error("Выберите включённый Instagram-аккаунт");
+  if(!body.dryRun&&!store.hasCurrentPreview(campaign.id,sender.v1AccountId||""))throw Error("Сначала проверьте эту версию сообщения с выбранным аккаунтом");
   if(store.state(limit,dry).activeLease)throw Error("Дождитесь завершения текущего действия");
   const chrome=await fetch("http://127.0.0.1:9222/json/version",{signal:AbortSignal.timeout(1500)}).catch(()=>null);
   if(!chrome?.ok)throw Error("Chrome для рассылки не открыт. Запустите mailer/start-chrome.bat и войдите в Instagram");

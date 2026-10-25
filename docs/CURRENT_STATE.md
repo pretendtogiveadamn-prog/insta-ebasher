@@ -1,15 +1,17 @@
 # Current state
 
-Verified: 2026-10-24. Previous V1 audit: `AUDIT_2026-09-14.md`.
+Verified: 2026-10-25. Previous V1 audit: `AUDIT_2026-09-14.md`.
 
-## Client outreach panel (2026-10-24)
+## Client outreach panel (2026-10-25)
 
 - Active checkout: `D:\codexprojects\insta-ebasher`. Client flow is local `http://127.0.0.1:3100/#outreach`.
 - The client can select all `ready` leads from the full CRM, exclude individual leads, write and revise a campaign message, select a local Chrome sender account, run a one-recipient dry-run, enable and start live scripted sending, inspect progress, and stop further recipients.
+- Both the CRM and ready-lead picker search the full database and page 100 at a time. Existing local Chrome accounts can be switched in the panel or via `npm run outreach -- account use <id>`; adding a local account activates it. The local CLI also lists leads and campaigns, creates campaigns, edits messages, previews, enables, sends, stops and disables through the panel API.
+- Preview records use the V1 account ID mapped from the selected v2 sender. Switching or adding an account invalidates earlier previews, including when switching back. The server enforces this for live starts.
 - Script worker is `mailer/` via the V1 lease API. Research still uses the agent workflow. V1 decides recipient, message rendering, DNC, quota and deduplication. Only one local worker runs at a time; live enable resets when it exits. Changing message or account invalidates the preview gate.
 - Client sender browser is a dedicated Chrome window launched by `mailer/start-chrome.bat` and visible at CDP port 9222. The panel checks CDP readiness but cannot independently prove which Instagram account is logged in; the client must check it matches the selected @username before live sending.
 - Server shutdown during an active batch pauses the campaign and waits for the worker to finish its current action and record the outcome. Unknown send outcomes remain `unknown` for review.
-- Validation: root `npm run check` (59/59), `mailer/npm test` (150/150), `node --check` UI scripts, headless browser smoke at 1440px and 390px with no JS errors or overflow. No real DM was sent in validation. Live account/browser behavior still needs an owner-controlled dry-run on the actual Chrome session.
+- Validation: root `npm run check` (62/62), `mailer/npm test` (150/150), headless browser flow at 1440px and 390px with 510 synthetic ready leads, 509-person campaign, editing, account UI controls, preview/live request mocks, research review/job controls and pagination; no JS errors or horizontal overflow. Isolated API/CLI test switched accounts and verified preview invalidation. No real DM was sent. Live account/browser behavior still needs an owner-controlled dry-run on the actual Chrome session.
 
 ## V1 baseline (2026-09-14)
 

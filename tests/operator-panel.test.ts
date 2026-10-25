@@ -11,6 +11,16 @@ function lead(store:Store,name:string,approve=true){const row=store.lead(candida
 afterEach(()=>fixtures.splice(0).forEach(({store,dir})=>{store.close();rmSync(dir,{recursive:true,force:true})}));
 
 describe("client outreach plan",()=>{
+  it("searches and pages the full approved CRM beyond the snapshot limit",()=>{
+    const s=setup();
+    for(let i=0;i<510;i++)lead(s,`artist_${String(i).padStart(3,"0")}`);
+    lead(s,"review_only",false);
+    expect(s.operatorLeads({state:"ready",limit:100})).toMatchObject({total:510,offset:0,limit:100});
+    expect(s.operatorLeads({state:"ready",query:"artist_000"}).leads.map(x=>x.handle)).toEqual(["artist_000"]);
+    expect(s.operatorLeads({state:"ready",offset:500,limit:100}).leads).toHaveLength(10);
+    expect(s.operatorLeads({state:"review"}).total).toBe(1);
+    expect(()=>s.operatorLeads({limit:201})).toThrow("Invalid lead filter");
+  });
   it("all-ready selection includes the whole CRM queue and excludes unapproved leads",()=>{
     const s=setup();const a=lead(s,"a.artist"),b=lead(s,"b.artist"),c=lead(s,"c.artist");lead(s,"review.artist",false);
     expect(s.leads(undefined,2)).toHaveLength(2);
@@ -37,6 +47,8 @@ describe("client outreach plan",()=>{
     s.outcome(lease.id,{outcome:"previewed",observedHandle:"preview.artist"});
     expect(s.hasCurrentPreview(plan.id,account.id)).toBe(true);
     expect(s.hasCurrentPreview(plan.id,s.account("Other sender").id)).toBe(false);
+    s.audit(null,"mailer_account","activated:another-sender");
+    expect(s.hasCurrentPreview(plan.id,account.id)).toBe(false);
     s.campaignState(plan.id,"stop");
     s.replaceCampaignMessage(plan.id,"New message");
     expect(s.hasCurrentPreview(plan.id,account.id)).toBe(false);

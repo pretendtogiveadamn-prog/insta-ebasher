@@ -35,6 +35,16 @@ export class Store { db:Database.Database; constructor(path:string){mkdirSync(di
  addReady(id:string){if(!this.campaignBy(id))throw Error("Campaign not found");return this.db.prepare("INSERT OR IGNORE INTO memberships SELECT ?,id FROM leads WHERE state='ready'").run(id).changes}
  addLeads(id:string,leadIds:string[]){if(!this.campaignBy(id))throw Error("Campaign not found");if(!Array.isArray(leadIds)||!leadIds.length)throw Error("leadIds is required");const ins=this.db.prepare("INSERT OR IGNORE INTO memberships VALUES(?,?)");let n=0;for(const lid of leadIds){const l=this.leadBy(lid);if(!l)throw Error("Lead not found");if(l.state!=="ready")continue;n+=ins.run(id,lid).changes}return n}
  campaignLeads(id:string){if(!this.campaignBy(id))throw Error("Campaign not found");return this.db.prepare("SELECT l.id,l.handle,l.state FROM memberships m JOIN leads l ON l.id=m.lead_id WHERE m.campaign_id=? ORDER BY l.created").all(id) as {id:string;handle:string;state:State}[]}
+ operatorLeads(input:{state?:string;query?:string;offset?:number;limit?:number}={}){
+  const state=input.state||"ready",query=String(input.query||"").trim().toLowerCase();
+  const offset=Number(input.offset??0),limit=Number(input.limit??100);
+  if(!["ready","review","all"].includes(state)||query.length>100||!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>200)throw Error("Invalid lead filter or page size");
+  const where=state==="all"?"instr(handle,?)>0":"state=? AND instr(handle,?)>0";
+  const args=state==="all"?[query]:[state,query];
+  const total=(this.db.prepare(`SELECT COUNT(*) n FROM leads WHERE ${where}`).get(...args) as {n:number}).n;
+  const leads=this.db.prepare(`SELECT * FROM leads WHERE ${where} ORDER BY created DESC,id DESC LIMIT ? OFFSET ?`).all(...args,limit,offset).map((r:any)=>this.mapLead(r));
+  return{total,offset,limit,leads};
+ }
  createOperatorCampaign(input:{name:string;body:string;leadIds?:string[];allReady?:boolean;excludedIds?:string[]}){
   if(typeof input.name!=="string"||!input.name.trim()||input.name.length>120)throw Error("Campaign name is required (max 120 characters)");
   if(typeof input.body!=="string"||!input.body.trim()||input.body.length>2000)throw Error("Message is required (max 2000 characters)");
@@ -65,7 +75,7 @@ export class Store { db:Database.Database; constructor(path:string){mkdirSync(di
    return this.campaignBy(id)!;
   })();
  }
- hasCurrentPreview(id:string,accountId:string){const c=this.campaignBy(id);if(!c||!accountId)return false;return !!this.db.prepare("SELECT 1 FROM audit WHERE kind='campaign_preview' AND detail=? LIMIT 1").get(`${id}:${c.template.id}:${accountId}`)}
+ hasCurrentPreview(id:string,accountId:string){const c=this.campaignBy(id);if(!c||!accountId)return false;return !!this.db.prepare("SELECT 1 FROM audit WHERE kind='campaign_preview' AND detail=? AND rowid>COALESCE((SELECT MAX(rowid) FROM audit WHERE kind='mailer_account'),0) LIMIT 1").get(`${id}:${c.template.id}:${accountId}`)}
  active(type:string){return this.db.prepare("SELECT * FROM leases WHERE type=? AND state='active' AND expires>? LIMIT 1").get(type,iso())as any}
  recoverExpiredOutreachLeases(){const rows=this.db.prepare("SELECT id,lead_id FROM leases WHERE type='outreach' AND state='active' AND expires<=?").all(iso())as any[];for(const row of rows){this.db.prepare("UPDATE leases SET state='expired' WHERE id=?").run(row.id);const lead=row.lead_id?this.leadBy(row.lead_id):null;if(lead?.state==="ready")this.setLead(lead.id,"unknown","outreach_lease_expired");else if(lead)this.audit(lead.id,"outreach_lease_expired","state preserved:"+lead.state)}return rows.length}
  revokeLiveOutreachLeases(){const rows=this.db.prepare("SELECT id,lead_id,payload FROM leases WHERE type='outreach' AND state='active'").all()as any[];let revoked=0;for(const row of rows){const payload=JSON.parse(row.payload);if(payload.dryRun===false){this.db.prepare("UPDATE leases SET state='cancelled' WHERE id=?").run(row.id);this.audit(row.lead_id??null,"outreach_lease_revoked","runtime disabled");revoked++}}return revoked}

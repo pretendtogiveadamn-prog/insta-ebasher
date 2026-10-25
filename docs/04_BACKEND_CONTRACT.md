@@ -114,6 +114,12 @@ One local-only payload for initial load and refresh. The backend derives every c
 
 The panel refreshes this snapshot after an operator request or accepted agent outcome. It never derives a quota, status, approval or send result locally.
 
+### Client outreach API and CLI
+
+The local `npm run outreach -- ...` CLI uses the same `/api/operator/*` routes as the panel. `GET /api/operator/leads?state=ready&query=&offset=0&limit=100` searches the entire CRM with server-side pagination. `POST /api/operator/plans` accepts `{name,body,allReady,leadIds,excludedIds}`; the server resolves all eligible recipients in one transaction. `PATCH /api/operator/plans/:id/message` replaces the template and invalidates its previous preview.
+
+`GET /api/operator/mailer` lists local Chrome sender accounts. `POST /api/operator/mailer/accounts` adds and activates a local sender; `POST /api/operator/mailer/accounts/:id/activate` switches to one. Account changes return live mode to dry-run and invalidate previous previews. The panel sends the v2 sender ID to `/api/operator/mailer/start`; the server resolves its stored V1 account ID before checking preview evidence. The preview must match the current campaign template and selected sender, and be newer than the latest sender change. The worker still receives the v2 sender ID for its own database.
+
 ## Required backend validation
 
 - lease ownership, expiry and one-outcome idempotency;

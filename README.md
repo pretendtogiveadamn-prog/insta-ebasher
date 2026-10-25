@@ -6,7 +6,7 @@ Local CRM and client-controlled Instagram outreach workspace.
 
 The backend owns CRM decisions, recipient eligibility, deduplication and the 35/24h quota. The client selects approved leads, edits the message and runs scripted outreach from the local panel. The sender uses a dedicated, already logged-in Chrome window launched by `mailer/start-chrome.bat`; research can still be run by an agent.
 
-For a research batch, start Codex in this repository and say: `Read prompts/batch-runner.md. Start a research batch; ask me for the target and source if they are missing.` For outreach, open the panel and use **Рассылка**.
+For a research batch, start Codex in this repository and say: `Read prompts/batch-runner.md. Start a research batch; ask me for the target and source if they are missing.` For outreach, open the panel and use **Рассылка**. An agent can operate the same local workflow through `npm run outreach -- help`; CLI and panel share the server's eligibility, preview, quota and sender gates.
 
 Runtime data, Chrome sessions and credentials stay local and are not part of the repository.
 

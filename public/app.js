@@ -1,7 +1,7 @@
 import { esc, button, badge, panel, metric, emptyState, field } from "./components.js";
 
 const $=selector=>document.querySelector(selector);
-const state={snapshot:null,mailer:null,tab:(location.hash||"#outreach").slice(1),selectedLeads:new Set(),excludedLeads:new Set(),allReadySelected:false,leadQuery:"",researchQuery:"",planName:"",planBody:"",selectedPlanId:null,selectedAccountId:null,planLeads:[],hasPreview:false,max:35,editBody:"",busy:false};
+const state={snapshot:null,mailer:null,tab:(location.hash||"#outreach").slice(1),selectedLeads:new Set(),excludedLeads:new Set(),allReadySelected:false,leadQuery:"",readyPage:null,researchQuery:"",researchPage:null,planName:"",planBody:"",selectedPlanId:null,selectedAccountId:null,planLeads:[],hasPreview:false,max:35,editBody:"",busy:false};
 const titles={home:"ОБЗОР",research:"ЛИДЫ",outreach:"РАССЫЛКА",inbox:"ВХОДЯЩИЕ"};
 let toastTimer;
 
@@ -17,7 +17,28 @@ const ig=handle=>`<a href="https://www.instagram.com/${esc(handle)}/" target="_b
 const dateTime=value=>value?new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const currentPlan=()=>state.snapshot?.campaigns.find(x=>x.id===state.selectedPlanId)||null;
 const activeRun=()=>["running","stopping"].includes(state.mailer?.run?.state);
-const readyLeads=()=>state.snapshot?.research.leads.filter(x=>x.state==="ready")||[];
+const readyLeads=()=>state.readyPage?.leads||state.snapshot?.research.leads.filter(x=>x.state==="ready")||[];
+let readySearchTimer,readySearchSeq=0;
+let researchSearchTimer,researchSearchSeq=0;
+async function fetchResearchPage(reset=false){
+  const query=state.researchQuery,seq=++researchSearchSeq;
+  const offset=reset?0:(state.researchPage?.leads.length||0);
+  const page=await api(`/operator/leads?state=all&query=${encodeURIComponent(query)}&offset=${offset}&limit=100`);
+  if(seq!==researchSearchSeq||query!==state.researchQuery)return;
+  state.researchPage={leads:reset?page.leads:[...(state.researchPage?.leads||[]),...page.leads],total:page.total,query};
+  const list=$("#research-list");if(list)list.innerHTML=researchRows();
+  const more=$("#research-more");if(more)more.innerHTML=researchMore();
+}
+async function fetchReadyPage(reset=false){
+  const query=state.leadQuery;
+  const seq=++readySearchSeq;
+  const offset=reset?0:(state.readyPage?.leads.length||0);
+  const page=await api(`/operator/leads?state=ready&query=${encodeURIComponent(query)}&offset=${offset}&limit=100`);
+  if(seq!==readySearchSeq||query!==state.leadQuery)return;
+  state.readyPage={leads:reset?page.leads:[...(state.readyPage?.leads||[]),...page.leads],total:page.total,query};
+  const list=$("#lead-choices");if(list)list.innerHTML=leadChoices();
+  const more=$("#lead-more");if(more)more.innerHTML=leadMore();
+}
 const renderMessage=(body,handle)=>String(body||"").replace(/@?{{\s*handle\s*}}/g,`@${handle}`).replace(/{{\s*[^}]+\s*}}/g,"");
 
 function toast(message,error=false){
@@ -49,25 +70,30 @@ function researchRow(lead){
   const evidence=(lead.evidence||[]).slice(0,2).map(x=>esc(x.note||"")).filter(Boolean).join(" · ");
   return `<div class="table-row"><div><strong>${ig(lead.handle)}</strong><small>${esc(lead.state)} · ${esc(lead.verdict)} · ${lead.confidence}%${lead.followers!=null?` · ${lead.followers} подписчиков`:""}</small>${evidence?`<p>${evidence}</p>`:""}</div><div class="table-row__actions">${controls}</div></div>`;
 }
+function researchRows(){return (state.researchPage?.leads||[]).map(researchRow).join("")||emptyState("Ничего не найдено","Измените запрос или дождитесь новых лидов.")}
+function researchMore(){const shown=state.researchPage?.leads.length||0,total=state.researchPage?.total||0;return shown<total?`${button(`Показать ещё · ${total-shown}`,{tone:"quiet",action:"more-research"})}<span class="ui-help">Показано ${shown} из ${total}</span>`:`<span class="ui-help">Показано ${shown} из ${total}</span>`}
 
 function renderResearch(){
   const s=state.snapshot;
-  const leads=s.research.leads.filter(x=>!state.researchQuery||x.handle.includes(state.researchQuery));
   $("#research").innerHTML=`<div class="page-intro"><div><p class="ui-eyebrow">CRM / артисты</p><h1 id="research-title">Лиды.</h1><p>Проверьте найденные профили. Для рассылки доступны только одобренные.</p></div></div>
     <div class="metric-strip">${metric("Всего в CRM",s.research.counts.total)}${metric("На проверке",s.research.counts.review)}${metric("Готовы",s.research.counts.ready)}</div>
-    <div class="simple-grid"><div>${panel("Список лидов",`${field("Поиск по @имени",`<input id="research-search" type="search" value="${esc(state.researchQuery)}" placeholder="Введите username">`)}<div id="research-list" class="table-list">${leads.slice(0,100).map(researchRow).join("")||emptyState("Ничего не найдено","Измените запрос или дождитесь новых лидов.")}</div>${leads.length>100?`<p class="ui-help">Показано 100 из ${leads.length} записей.</p>`:""}`,{eyebrow:"01 / проверка"})}</div>
-    <div>${panel("Задания поиска",`${s.research.jobs.slice(0,8).map(j=>`<div class="table-row"><div><strong>${esc(j.name)}</strong><small>${esc(j.status)} · ${j.found}/${j.target}</small></div></div>`).join("")||emptyState("Заданий пока нет","Когда агент начнёт поиск, прогресс появится здесь.")}<hr class="ui-divider"><form id="job-form" class="form-stack">${field("Название",`<input name="name" required maxlength="100" placeholder="Например, артисты из Нью-Йорка">`)}${field("Источники поиска",`<input name="seeds" required placeholder="producer_a, producer_b">`,"Укажите исходные аккаунты через запятую.")}${field("Тип источника",`<select name="source"><option value="follower">Подписчики</option><option value="tagged">Отметки</option><option value="search">Поиск</option></select>`)}${field("Цель",`<input name="targetCount" type="number" min="1" max="500" value="20" required>`)}${button("Создать задание",{tone:"quiet",type:"submit"})}</form>`,{eyebrow:"02 / ресёрч"})}</div></div>`;
+    <div class="simple-grid"><div>${panel("Задания поиска",`${s.research.jobs.slice(0,8).map(j=>`<div class="table-row"><div><strong>${esc(j.name)}</strong><small>${esc(j.status)} · ${j.found}/${j.target}</small></div></div>`).join("")||emptyState("Заданий пока нет","Когда агент начнёт поиск, прогресс появится здесь.")}<hr class="ui-divider"><form id="job-form" class="form-stack">${field("Название",`<input name="name" required maxlength="100" placeholder="Например, артисты из Нью-Йорка">`)}${field("Источники поиска",`<input name="seeds" required placeholder="producer_a, producer_b">`,"Укажите исходные аккаунты через запятую.")}${field("Тип источника",`<select name="source"><option value="follower">Подписчики</option><option value="tagged">Отметки</option><option value="search">Поиск</option></select>`)}${field("Цель",`<input name="targetCount" type="number" min="1" max="500" value="20" required>`)}${button("Создать задание",{tone:"quiet",type:"submit"})}</form>`,{eyebrow:"01 / ресёрч"})}</div>
+    <div>${panel("Список лидов",`${field("Поиск по @имени",`<input id="research-search" type="search" value="${esc(state.researchQuery)}" placeholder="Введите username">`)}<div id="research-list" class="table-list research-list">${researchRows()}</div><div id="research-more" class="lead-more">${researchMore()}</div>`,{eyebrow:"02 / проверка"})}</div></div>`;
 }
 
 function leadChoices(){
-  const items=readyLeads().filter(x=>!state.leadQuery||x.handle.includes(state.leadQuery));
-  const html=items.slice(0,300).map(x=>`<label class="ui-lead"><input type="checkbox" data-lead-id="${esc(x.id)}" ${(state.allReadySelected?!state.excludedLeads.has(x.id):state.selectedLeads.has(x.id))?"checked":""}><span class="ui-lead__copy"><strong>@${esc(x.handle)}</strong><small>${esc(x.genre||"Артист")} · ${x.followers!=null?`${x.followers} подписчиков · `:""}${esc(x.source?.seed||"CRM")}</small></span></label>`).join("");
+  const items=readyLeads();
+  const html=items.map(x=>`<label class="ui-lead"><input type="checkbox" data-lead-id="${esc(x.id)}" ${(state.allReadySelected?!state.excludedLeads.has(x.id):state.selectedLeads.has(x.id))?"checked":""}><span class="ui-lead__copy"><strong>@${esc(x.handle)}</strong><small>${esc(x.genre||"Артист")} · ${x.followers!=null?`${x.followers} подписчиков · `:""}${esc(x.source?.seed||"CRM")}</small></span></label>`).join("");
   return html||emptyState("Нет подходящих лидов","Проверьте поиск или одобрите профили в CRM.");
+}
+function leadMore(){
+  const total=state.readyPage?.total??state.snapshot.research.counts.ready;
+  const shown=readyLeads().length;
+  return shown<total?`${button(`Показать ещё · ${total-shown}`,{tone:"quiet",action:"more-ready"})}<span class="ui-help">Показано ${shown} из ${total}</span>`:`<span class="ui-help">Показано ${shown} из ${total}</span>`;
 }
 
 function planCreator(){
-  const allReady=readyLeads();
-  const sample=allReady.find(x=>state.selectedLeads.has(x.id))?.handle||"artist";
+  const sample=draftSample();
   return panel("Новая кампания",`<form id="plan-form" class="form-stack">
     ${field("Название кампании",`<input id="plan-name" name="name" value="${esc(state.planName)}" maxlength="120" required placeholder="Например, осень / новые артисты">`)}
     ${field("Текст первого сообщения",`<textarea id="plan-body" name="body" maxlength="2000" required placeholder="Напишите сообщение, которое получит артист.">${esc(state.planBody)}</textarea>`,"Используйте {{handle}}, чтобы подставить @имя. Текст можно изменить до запуска.")}
@@ -76,16 +102,26 @@ function planCreator(){
     <div class="ui-panel__head"><div><h3>Кому отправить</h3><p class="section-caption">Все готовые лиды — одним нажатием. При желании снимите галочку с отдельных.</p></div><span id="selection-count">${badge(`${state.allReadySelected?state.snapshot.research.counts.ready-state.excludedLeads.size:state.selectedLeads.size} выбрано`)}</span></div>
     <div class="lead-toolbar">${field("Найти получателя",`<input id="lead-search" type="search" value="${esc(state.leadQuery)}" placeholder="Поиск по @имени">`)}${button(state.allReadySelected?"Все готовые выбраны":"Выбрать всех готовых",{tone:"soft",action:"select-all-ready",disabled:state.allReadySelected||!state.snapshot.research.counts.ready})}</div>
     <div id="lead-choices" class="lead-list">${leadChoices()}</div>
-    <div class="selection-summary"><span>${state.allReadySelected?"В кампанию попадут все ready из CRM, включая записи вне экрана.":`Доступно: ${allReady.length}${state.snapshot.research.counts.ready>allReady.length?` из ${state.snapshot.research.counts.ready} — показаны последние`:""}`}</span>${button("Снять выбор",{tone:"text",action:"clear-leads"})}</div>
+    <div id="lead-more" class="lead-more">${leadMore()}</div>
+    <div class="selection-summary"><span>${state.allReadySelected?"В кампанию попадут все готовые из CRM на момент сохранения, включая другие страницы.":`Выберите отдельных артистов или весь готовый список.`}</span>${button("Снять выбор",{tone:"text",action:"clear-leads"})}</div>
     <div class="form-actions"><span class="ui-help">${state.mailer.chromeReady&&state.selectedAccountId?"Сохраним список и проверим один DM без отправки.":"Подключите Chrome и аккаунт для проверки."}</span>${button(state.mailer.chromeReady&&state.selectedAccountId?"Сохранить и проверить":"Сохранить кампанию",{tone:"primary",type:"submit",disabled:!(state.allReadySelected||state.selectedLeads.size)||state.busy,extra:'id="continue-button"'})}</div>
   </form>`,{eyebrow:"01 / сообщение и получатели"});
+}
+function draftSample(){
+  const allReady=readyLeads();
+  return allReady.find(x=>state.allReadySelected?!state.excludedLeads.has(x.id):state.selectedLeads.has(x.id))?.handle||allReady[0]?.handle||"artist";
+}
+function updateDraftPreview(){
+  const sample=draftSample();
+  const preview=$("#draft-preview");if(preview)preview.textContent=renderMessage(state.planBody,sample)||"Здесь появится пример сообщения.";
+  const badgeEl=$(".preview__head .ui-badge");if(badgeEl)badgeEl.textContent=`@${sample}`;
 }
 
 function accountsPanel(){
   const accounts=state.mailer.accounts||[];
-  const rows=accounts.map(a=>`<div class="account-item"><input type="radio" name="mailer-account" id="account-${esc(a.id)}" value="${esc(a.id)}" ${state.selectedAccountId===a.id?"checked":""} ${!a.enabled?"disabled":""}><label for="account-${esc(a.id)}">${esc(a.username||"Аккаунт")}<small>${a.enabled?`Лимит ${a.dailyCap} / 24 часа${a.cooldownUntil&&Date.parse(a.cooldownUntil)>Date.now()?` · пауза до ${dateTime(a.cooldownUntil)}`:""}`:"Выключен"}</small></label></div>`).join("");
+  const rows=accounts.map(a=>`<div class="account-item"><div class="account-item__copy"><strong>${esc(a.username||"Аккаунт")}</strong><small>Лимит ${a.dailyCap} / 24 часа${a.cooldownUntil&&Date.parse(a.cooldownUntil)>Date.now()?` · пауза до ${dateTime(a.cooldownUntil)}`:""}</small></div>${a.enabled?badge("Активен","success"):button("Выбрать",{tone:"quiet",action:"activate-account",disabled:activeRun(),extra:`data-id="${esc(a.id)}"`})}</div>`).join("");
   const chrome=state.mailer.chromeReady?`<div class="ui-inline-note">Chrome подключён. Проверьте, что вы вошли в нужный Instagram-аккаунт в рабочем окне.</div>`:`<div class="ui-inline-note ui-inline-note--warning">Откройте <strong>mailer/start-chrome.bat</strong>, затем войдите в Instagram в этом окне.</div>`;
-  const add=accounts.some(a=>a.enabled&&a.profile?.startsWith("local-chrome"))?"":`<hr class="ui-divider"><form id="account-form" class="form-stack">${field("Добавить свой Instagram",`<input name="username" required maxlength="30" autocomplete="off" placeholder="@your_account">`)}${button("Добавить аккаунт",{tone:"quiet",type:"submit"})}</form>`;
+  const add=`<hr class="ui-divider"><form id="account-form" class="form-stack">${field("Добавить или сменить Instagram",`<input name="username" required maxlength="30" autocomplete="off" placeholder="@your_account">`,"Для другого аккаунта войдите в него в рабочем Chrome. После смены нужна новая проверка DM.")}${button("Добавить аккаунт",{tone:"quiet",type:"submit",disabled:activeRun()})}</form>`;
   return panel("Ваш аккаунт",`${rows||emptyState("Аккаунт не добавлен","Введите @имя аккаунта, с которого клиент будет отправлять сообщения.")}${chrome}${add}`,{eyebrow:"02 / отправитель"});
 }
 
@@ -145,7 +181,9 @@ async function load(force=false){
   try{
     const [snapshot,mailer]=await Promise.all([api("/panel/snapshot"),api("/operator/mailer")]);
     state.snapshot=snapshot;state.mailer=mailer;
-    if(!state.selectedAccountId&&mailer.accounts.length)state.selectedAccountId=mailer.accounts.find(a=>a.enabled)?.id||null;
+    if(!state.readyPage||(!state.leadQuery&&state.readyPage.total!==snapshot.research.counts.ready))await fetchReadyPage(true);
+    if(!state.researchPage||force||(!state.researchQuery&&state.researchPage.total!==snapshot.research.counts.total))await fetchResearchPage(true);
+    if(!mailer.accounts.some(a=>a.id===state.selectedAccountId&&a.enabled))state.selectedAccountId=mailer.accounts.find(a=>a.enabled)?.id||null;
     if(!state.selectedPlanId&&snapshot.campaigns.length)state.selectedPlanId=snapshot.campaigns.find(c=>c.status==="running")?.id||snapshot.campaigns[0].id;
     if(state.selectedPlanId){const details=await api(`/operator/plans/${encodeURIComponent(state.selectedPlanId)}/leads?accountId=${encodeURIComponent(state.selectedAccountId||"")}`);state.planLeads=details.leads;state.hasPreview=details.hasPreview}
     const focused=document.activeElement;
@@ -154,10 +192,13 @@ async function load(force=false){
   }catch(error){toast(error.message,true)}
 }
 
-function openTab(tab){state.tab=titles[tab]?tab:"outreach";location.hash=state.tab;header();window.scrollTo({top:0,behavior:"smooth"})}
+function openTab(tab){state.tab=titles[tab]?tab:"outreach";history.replaceState(null,"",`#${state.tab}`);header();window.scrollTo(0,0)}
 async function act(promise,success){
-  if(state.busy)return;state.busy=true;
+  if(state.busy){toast("Дождитесь завершения текущего действия",true);return}
+  state.busy=true;document.body.setAttribute("aria-busy","true");
+  const buttons=[...document.querySelectorAll("button:not(:disabled)")];buttons.forEach(button=>button.disabled=true);
   try{await promise();state.busy=false;toast(success);await load(true)}catch(error){state.busy=false;toast(error.message,true);render()}
+  finally{buttons.forEach(button=>{if(button.isConnected)button.disabled=false});document.body.removeAttribute("aria-busy")}
 }
 
 document.addEventListener("click",async event=>{
@@ -167,11 +208,11 @@ document.addEventListener("click",async event=>{
   if(action==="go-outreach"){openTab("outreach");return}
   if(action==="open-plan"){state.selectedPlanId=id;state.editBody="";openTab("outreach");await load(true);return}
   if(action==="select-plan"){state.selectedPlanId=id;state.editBody="";await load(true);return}
+  if(action==="activate-account"){await act(async()=>{const account=await post(`/operator/mailer/accounts/${encodeURIComponent(id)}/activate`);state.selectedAccountId=account.id;state.hasPreview=false},"Аккаунт выбран. Войдите в него в рабочем Chrome и проверьте DM заново.");return}
   if(action==="clear-leads"){state.selectedLeads.clear();state.excludedLeads.clear();state.allReadySelected=false;renderOutreach();return}
   if(action==="select-all-ready"){state.allReadySelected=true;state.selectedLeads.clear();state.excludedLeads.clear();renderOutreach();return}
-  if(action==="select-visible"){
-    readyLeads().filter(x=>!state.leadQuery||x.handle.includes(state.leadQuery)).slice(0,300).forEach(x=>state.selectedLeads.add(x.id));renderOutreach();return;
-  }
+  if(action==="more-ready"){try{await fetchReadyPage(false)}catch(error){toast(error.message,true)}return}
+  if(action==="more-research"){try{await fetchResearchPage(false)}catch(error){toast(error.message,true)}return}
   if(action==="run-dry"||action==="run-live"){
     const plan=currentPlan();if(!plan)return toast("Сначала выберите кампанию",true);
     const dryRun=action==="run-dry";
@@ -192,22 +233,24 @@ document.addEventListener("input",event=>{
   if(el.id==="plan-name")state.planName=el.value;
   if(el.id==="plan-body"){
     state.planBody=el.value;
-    const sample=readyLeads().find(x=>state.selectedLeads.has(x.id))?.handle||"artist";
-    const preview=$("#draft-preview");if(preview)preview.textContent=renderMessage(el.value,sample)||"Здесь появится пример сообщения.";
+    updateDraftPreview();
   }
   if(el.id==="lead-search"){
-    state.leadQuery=el.value.trim().toLowerCase();const list=$("#lead-choices");if(list)list.innerHTML=leadChoices();
+    state.leadQuery=el.value.trim().replace(/^@/,"").toLowerCase();
+    const list=$("#lead-choices");if(list)list.innerHTML=emptyState("Ищем в CRM","Поиск идёт по всему списку готовых лидов.");
+    clearTimeout(readySearchTimer);
+    readySearchTimer=setTimeout(()=>fetchReadyPage(true).catch(error=>toast(error.message,true)),180);
   }
   if(el.id==="research-search"){
-    state.researchQuery=el.value.trim().toLowerCase();const list=$("#research-list");if(list)list.innerHTML=state.snapshot.research.leads.filter(x=>!state.researchQuery||x.handle.includes(state.researchQuery)).slice(0,100).map(researchRow).join("")||emptyState("Ничего не найдено","Измените запрос.");
+    state.researchQuery=el.value.trim().replace(/^@/,"").toLowerCase();const list=$("#research-list");if(list)list.innerHTML=emptyState("Ищем в CRM","Поиск идёт по всем найденным лидам.");
+    clearTimeout(researchSearchTimer);researchSearchTimer=setTimeout(()=>fetchResearchPage(true).catch(error=>toast(error.message,true)),180);
   }
   if(el.id==="batch-size")state.max=Number(el.value);
 });
 
 document.addEventListener("change",event=>{
   const el=event.target;
-  if(el.matches("[data-lead-id]")){if(state.allReadySelected){el.checked?state.excludedLeads.delete(el.dataset.leadId):state.excludedLeads.add(el.dataset.leadId)}else{el.checked?state.selectedLeads.add(el.dataset.leadId):state.selectedLeads.delete(el.dataset.leadId)}const count=$("#selection-count");const total=state.allReadySelected?state.snapshot.research.counts.ready-state.excludedLeads.size:state.selectedLeads.size;if(count)count.innerHTML=badge(`${total} выбрано`);const submit=$("#continue-button");if(submit)submit.disabled=!total}
-  if(el.name==="mailer-account"){state.selectedAccountId=el.value;state.hasPreview=false;load(true)}
+  if(el.matches("[data-lead-id]")){if(state.allReadySelected){el.checked?state.excludedLeads.delete(el.dataset.leadId):state.excludedLeads.add(el.dataset.leadId)}else{el.checked?state.selectedLeads.add(el.dataset.leadId):state.selectedLeads.delete(el.dataset.leadId)}const count=$("#selection-count");const total=state.allReadySelected?state.snapshot.research.counts.ready-state.excludedLeads.size:state.selectedLeads.size;if(count)count.innerHTML=badge(`${total} выбрано`);const submit=$("#continue-button");if(submit)submit.disabled=!total;updateDraftPreview()}
 });
 
 document.addEventListener("submit",async event=>{
@@ -218,7 +261,7 @@ document.addEventListener("submit",async event=>{
     const autoPreview=Boolean(state.mailer.chromeReady&&state.selectedAccountId);
     await act(async()=>{const plan=await post("/operator/plans",{name:state.planName,body:state.planBody,leadIds:[...state.selectedLeads],allReady:state.allReadySelected,excludedIds:[...state.excludedLeads]});state.selectedPlanId=plan.id;state.selectedLeads.clear();state.excludedLeads.clear();state.allReadySelected=false;state.planName="";state.planBody="";state.editBody="";state.max=35;if(autoPreview)await post("/operator/mailer/start",{campaignId:plan.id,accountId:state.selectedAccountId,max:1,dryRun:true})},autoPreview?"Кампания сохранена. Проверка одного DM запущена.":"Кампания сохранена. Подключите Chrome для проверки.");
   }
-  if(form.id==="account-form")await act(()=>post("/operator/mailer/accounts",{username:data.username}),"Аккаунт добавлен. Откройте рабочий Chrome и войдите в Instagram.");
+  if(form.id==="account-form")await act(async()=>{const account=await post("/operator/mailer/accounts",{username:data.username});state.selectedAccountId=account.id;state.hasPreview=false},"Аккаунт добавлен и выбран. Войдите в него в рабочем Chrome.");
   if(form.id==="message-form"){
     const plan=currentPlan();if(plan)await act(()=>patch(`/operator/plans/${encodeURIComponent(plan.id)}/message`,{body:data.body}),"Текст обновлён. Нужен новый проверочный прогон.");
   }

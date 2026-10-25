@@ -8,7 +8,7 @@
 2. В корне проекта выполните `npm install`. Затем выполните `npm install` в папке `mailer`.
 3. В корне запустите `npm run dev` и откройте `http://127.0.0.1:3100/#outreach`.
 4. Запустите `mailer/start-chrome.bat`, войдите в свой Instagram в открывшемся окне и оставьте его открытым.
-5. В панели «Рассылка» добавьте `@username` этого аккаунта и выберите его.
+5. В панели «Рассылка» добавьте `@username` этого аккаунта. Если аккаунтов несколько, нажмите «Выбрать» рядом с нужным. При смене аккаунта войдите в него в рабочем Chrome и повторите проверку DM.
 
 Данные CRM, история отправки и профиль Chrome хранятся только на этом компьютере. Не переносите их в ZIP и не публикуйте в GitHub.
 
@@ -24,3 +24,22 @@
 Перед реальной отправкой проверьте, что в рабочем Chrome открыт именно выбранный в панели аккаунт. После партии разрешение на реальную отправку выключится автоматически. Изменение текста или аккаунта требует новой проверки. Один и тот же первый DM повторно не выдаётся; неопределённый результат остаётся на разбор, а отказ от контакта исключает лида из будущих партий.
 
 Для поиска новых артистов дайте агенту задание по `prompts/batch-runner.md`. Найденные лиды появятся в CRM после проверки.
+
+## Управление из CLI для агента
+
+Панель должна работать. Команды используют те же API и ограничения, что кнопки клиента. Из корня проекта:
+
+```powershell
+npm run outreach -- status
+npm run outreach -- leads --state ready --query artist
+npm run outreach -- accounts
+npm run outreach -- account use <id>
+npm run outreach -- campaign create --name "Новые артисты" --message-file .\message.txt --all-ready
+npm run outreach -- campaigns
+npm run outreach -- preview <campaign-id>
+npm run outreach -- allow --confirm SEND_REAL_MESSAGES
+npm run outreach -- send <campaign-id> --max 10
+npm run outreach -- stop
+```
+
+Есть также `account add <username>`, `campaign leads <id>`, `campaign message <id> --message-file <path>` и `disable`. Для имени с `@` в PowerShell используйте кавычки, например `'@my_account'`; ID аккаунта обходится без них. Полный список: `npm run outreach -- help`. Перед `allow` требуется успешная проверка для текущего аккаунта и текста.
